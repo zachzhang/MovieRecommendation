@@ -10,7 +10,7 @@ class HybridCollabFilter():
     def __init__(self, numUsers, embedding_dim,input_dim):
 
         # hyper parameters
-        self.batch_size = 32
+        self.batch_size = 3200
         self.numUsers = numUsers
         self.epochs = 100
         self.init_var =.01
@@ -41,7 +41,7 @@ class HybridCollabFilter():
 
         self.cost = tf.nn.l2_loss(self.yhat - self.rating)
 
-        self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
 
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
