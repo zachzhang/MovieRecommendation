@@ -8,7 +8,7 @@ class MF_RS():
     def __init__(self, numUsers, numSongs, embedding_dim):
 
         # hyper parameters
-        self.batch_size = 32
+        self.batch_size = 512
         self.numUsers = numUsers
         self.numSongs = numSongs
         self.epochs = 100
@@ -68,9 +68,10 @@ class MF_RS():
                 users_batch = x_batch[:,0]
                 songs_batch = x_batch[:,1]
 
-                avg_cost +=  (self.session.run([self.cost, self.optimizer],
+                cost =  (self.session.run([self.cost, self.optimizer],
                                              {self.users: users_batch, self.songs: songs_batch,
                                               self.rating: ratings_batch})[0] ) / self.batch_size
+                avg_cost += cost
 
             print "Epoch: ",i, " Average Cost: ",avg_cost / num_batches
 
@@ -103,7 +104,7 @@ class MF_RS():
 
 
 if __name__ == '__main__':
-    movieratings = pd.read_csv('ratings.csv')
+    movieratings = pd.read_csv('~/Desktop/ml-20m/ratings.csv')
 
     user_idx, song_idx, num_users, num_songs = MF_RS.map2idx(movieratings)
     ratings = movieratings.ix[:, 2].values
