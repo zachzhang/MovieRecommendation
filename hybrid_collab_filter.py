@@ -10,7 +10,7 @@ class HybridCollabFilter():
     def __init__(self, numUsers, embedding_dim,input_dim):
 
         # hyper parameters
-        self.batch_size = 3200
+        self.batch_size = 300
         self.numUsers = numUsers
         self.epochs = 10
         self.init_var =.01
@@ -43,7 +43,7 @@ class HybridCollabFilter():
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
 
-        self.auc = tf.contrib.metrics.streaming_auc(self.yhat, self.rating)
+        self.auc = self.cost#tf.contrib.metrics.streaming_auc(self.yhat, self.rating)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -100,9 +100,9 @@ class HybridCollabFilter():
                 for usr in uni_users:
                     usr_idxes = users_test == usr
                     usr_idxes = np.where(usr_idxes)
-                    usr_u = self.users_test[usr_idxes]
-                    movie_u = self.movies_test[usr_idxes]
-                    rtg_u = self.ratings_test[usr_idxes]
+                    usr_u = users_test[usr_idxes]
+                    movie_u = movies_test[usr_idxes]
+                    rtg_u = ratings_test[usr_idxes]
                     if len(usr_u) < 2:
                         next
                     auc_mean += (self.session.run([self.auc],
@@ -134,7 +134,7 @@ class HybridCollabFilter():
 
 
 def featureMatrix():
-    movieData = pd.read_csv('/Users/Hadoop/Desktop/movieData.csv')
+    movieData = pd.read_csv('movieData.csv')
 
     vectorizer = CountVectorizer(max_features=200)
 
@@ -147,7 +147,7 @@ def featureMatrix():
 if __name__ == '__main__':
 
     #Data on each movie from IMDB
-    movieData = pd.read_csv('/Users/Hadoop/Desktop/movieData.csv')
+    movieData = pd.read_csv('movieData.csv')
 
     #Movie Lens rating data
     movieratings = pd.read_csv('ratings.csv')
