@@ -12,7 +12,7 @@ class HybridCollabFilter():
         # hyper parameters
         self.batch_size = 3200
         self.numUsers = numUsers
-        self.epochs = 100
+        self.epochs = 10
         self.init_var =.01
 
         #Movie Features
@@ -43,6 +43,8 @@ class HybridCollabFilter():
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
 
+        self.auc = tf.contrib.metrics.streaming_auc(self.yhat, self.rating)
+        
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
 
@@ -90,14 +92,25 @@ class HybridCollabFilter():
                                              {self.users: users_batch, self.movieFeatures: movie_batch,
                                               self.rating: ratings_batch})[0] ) / self.batch_size
 
-            print "Epoch: ",i, " Average Cost: ",avg_cost / num_batches
+            print "Epoch: ", i, " Average Cost: ",avg_cost / num_batches
 
             if i % val_freq ==0:
+                auc_mean = 0
+                uni_users = np.unique(users_test)
+                for usr in uni_users:
+                    usr_idxes = users_test == usr
+                    usr_idxes = np.where(usr_idxes)
+                    usr_u = self.users_test[usr_idxes]
+                    movie_u = self.movies_test[usr_idxes]
+                    rtg_u = self.ratings_test[usr_idxes]
+                    if len(usr_u) < 2:
+                        next
+                    auc_mean += (self.session.run([self.auc],
+                                             {self.users: usr_u, self.movieFeatures: movie_u,
+                                              self.rating: rtg_u})[0] ) / len(uni_users)
 
-                oos_cost = self.session.run(self.cost, {self.users: users_test, self.movieFeatures: movies_test,
-                                              self.rating: ratings_test})
-
-                print "Testing Loss: " , oos_cost / len(users_test)
+                print "Testing AUC mean: " , auc_mean
+                
 
     @staticmethod
     def map2idx(movieratings):
@@ -139,7 +152,7 @@ if __name__ == '__main__':
     #Movie Lens rating data
     movieratings = pd.read_csv('ratings.csv')
 
-    #A matrix (num movies , num features) that has the feature represenetion of each movie
+    #A matrix (num movies , num features) that has the feature representation of each movie
     featMat = featureMatrix()
 
     #User and movie ids mapped to be on continuous interval
