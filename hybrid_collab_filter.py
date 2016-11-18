@@ -2,6 +2,7 @@ import tensorflow as tf
 import sys
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 
@@ -42,8 +43,6 @@ class HybridCollabFilter():
         self.cost = tf.nn.l2_loss(self.yhat - self.rating)
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
-
-        self.auc = self.cost#tf.contrib.metrics.streaming_auc(self.yhat, self.rating)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -103,11 +102,12 @@ class HybridCollabFilter():
                     usr_u = users_test[usr_idxes]
                     movie_u = movies_test[usr_idxes]
                     rtg_u = ratings_test[usr_idxes]
-                    if len(usr_u) < 2:
-                        next
-                    auc_mean += (self.session.run([self.auc],
+                    if len(usr_u) < 3:
+                        continue
+                    yhat = (self.session.run([self.yhat],
                                              {self.users: usr_u, self.movieFeatures: movie_u,
-                                              self.rating: rtg_u})[0] ) / len(uni_users)
+                                              self.rating: rtg_u})[0] )
+                    auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
 
                 print ("Testing AUC mean: " , auc_mean)
                 
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     movieData = pd.read_csv('movieData.csv')
 
     #Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv')
+    movieratings = pd.read_csv('ratings.csv', nrows = 200000)
 
     #A matrix (num movies , num features) that has the feature representation of each movie
     featMat = featureMatrix()
@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
     #REMOVE THIS
     movie_idx = filter( lambda x: x  < 20,movie_idx)
-    print (len(movie_idx))
+    #print (len(movie_idx))
 
 
     user_idx = user_idx
