@@ -92,7 +92,7 @@ class HybridCollabFilter():
                                              {self.users: users_batch, self.movieFeatures: movie_batch,
                                               self.rating: ratings_batch})[0] ) / self.batch_size
 
-            print "Epoch: ", i, " Average Cost: ",avg_cost / num_batches
+            print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
 
             if i % val_freq ==0:
                 auc_mean = 0
@@ -109,7 +109,7 @@ class HybridCollabFilter():
                                              {self.users: usr_u, self.movieFeatures: movie_u,
                                               self.rating: rtg_u})[0] ) / len(uni_users)
 
-                print "Testing AUC mean: " , auc_mean
+                print ("Testing AUC mean: " , auc_mean)
                 
 
     @staticmethod
@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
     #REMOVE THIS
     movie_idx = filter( lambda x: x  < 20,movie_idx)
-    print len(movie_idx)
+    print (len(movie_idx))
 
 
     user_idx = user_idx
