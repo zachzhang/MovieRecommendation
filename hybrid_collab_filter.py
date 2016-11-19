@@ -11,15 +11,15 @@ class HybridCollabFilter():
     def __init__(self, numUsers, embedding_dim,input_dim):
 
         # hyper parameters
-        self.batch_size = 300
+        self.batch_size = 512
         self.numUsers = numUsers
-        self.epochs = 10
+        self.epochs = 30
         self.init_var =.01
 
         #Movie Features
         self.movieFeatures = tf.placeholder(tf.float32, shape=(None,input_dim))
 
-        # input tensors for songs, usres, ratings
+        # input tensors for movies, usres, ratings
         self.users = tf.placeholder(tf.int32, shape=(None))
         self.rating = tf.placeholder(tf.float32, shape=(None))
 
@@ -33,11 +33,11 @@ class HybridCollabFilter():
 
         movieTensor = tf.matmul(self.movieFeatures,self.W) + self.b
 
-        # map each user/song to its feature vector
+        # map each user/movie to its feature vector
         self.U = tf.nn.embedding_lookup(self.userMat, self.users)
         self.u_b = tf.nn.embedding_lookup(self.userBias, self.users)
 
-        # predicted rating is dot product of user and song
+        # predicted rating is dot product of user and movie
         self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
 
         self.cost = tf.nn.l2_loss(self.yhat - self.rating)
@@ -69,7 +69,7 @@ class HybridCollabFilter():
         return users_train,movies_train,ratings_train , users_test,movies_test,ratings_test
 
 
-    def train(self, users, movies, ratings,val_freq=5):
+    def train(self, users, movies, ratings, eval_type = 'AUC', val_freq=5):
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
             self.train_test_split(users,movies,ratings)
@@ -91,86 +91,133 @@ class HybridCollabFilter():
                                              {self.users: users_batch, self.movieFeatures: movie_batch,
                                               self.rating: ratings_batch})[0] ) / self.batch_size
 
+
+
             print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
 
             if i % val_freq ==0:
-                auc_mean = 0
-                uni_users = np.unique(users_test)
-                for usr in uni_users:
-                    usr_idxes = users_test == usr
-                    usr_idxes = np.where(usr_idxes)
-                    usr_u = users_test[usr_idxes]
-                    movie_u = movies_test[usr_idxes]
-                    rtg_u = ratings_test[usr_idxes]
-                    if len(usr_u) < 3:
-                        continue
-                    yhat = (self.session.run([self.yhat],
-                                             {self.users: usr_u, self.movieFeatures: movie_u,
-                                              self.rating: rtg_u})[0] )
-                    auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
+                if eval_type == 'AUC':
+                    auc_mean = 0
+                    uni_users = np.unique(users_test)
+                    for usr in uni_users:
+                        usr_idxes = users_test == usr
+                        usr_idxes = np.where(usr_idxes)
+                        usr_u = users_test[usr_idxes]
+                        movie_u = movies_test[usr_idxes]
+                        rtg_u = ratings_test[usr_idxes]
+                        if len(usr_u) < 3:
+                            continue
+                        yhat = (self.session.run([self.yhat],
+                                                 {self.users: usr_u, self.movieFeatures: movie_u,
+                                                  self.rating: rtg_u})[0] )
+                        auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
 
-                print ("Testing AUC mean: " , auc_mean)
-                
+                    print ("Testing AUC mean: " , auc_mean)
+
+                if eval_type == 'MSE':
+                    mse = self.session.run(self.cost,
+                                     {self.users: users_test, self.movieFeatures: movies_test,
+                                      self.rating: ratings_test}) / len(users_test)
+
+                    print ("Testing MSE: ", mse)
 
     @staticmethod
-    def map2idx(movieratings):
+    def map2idx(movieratings, mergedScrape_ML):
 
         users = movieratings['userId'].values
-        songs = movieratings['movieId'].values
+        movies = movieratings['movieId'].values
 
-        # unique users / songs
+        # unique users / movies
         uni_users = movieratings['userId'].unique()
-        uni_songs = movieratings['movieId'].unique()
+        uni_movies = mergedScrape_ML['movieId'].unique()
+
+        print len(uni_movies)
 
         # dict mapping the id to an index
         user_map = dict(zip(uni_users, range(len(uni_users))))
-        song_map = dict(zip(uni_songs, range(len(uni_songs))))
+        movie_map = dict(zip(uni_movies, range(len(uni_movies))))
 
-        user_idx = np.array([user_map[user] for user in users])
-        song_idx = np.array([song_map[song] for song in songs])
+        pairs = []
+        for user, movie, rating in zip(users, movies, movieratings['rating']):
+            if movie in movie_map:
+                pairs.append((user_map[user], movie_map[movie], rating))
 
-        return user_idx,song_idx,len(uni_users),len(uni_songs)
+        return np.array(pairs), len(uni_users), len(uni_movies)
+
+
+def clean_person_string(raw_text):
+
+    if raw_text == '':
+        return ''
+
+    cast = raw_text.split('>')
+    cast = [ s.split(":_")[1] for s in cast[0:-1]]
+    cast = ["_".join(s.split(",")).replace(" ", "") for s in cast]
+
+    return " ".join(cast)
 
 
 
-def featureMatrix():
-    movieData = pd.read_csv('movieData.csv')
+def featureMatrix(movieData):
 
-    vectorizer = CountVectorizer(max_features=200)
+    plot_vect = CountVectorizer(max_features=200)
+    person_vect = CountVectorizer(max_features=100)
 
-    movieFeatures = vectorizer.fit_transform(movieData['plot'])
+    plotFeatures = plot_vect.fit_transform(movieData['plot']).toarray()
 
-    return movieFeatures.toarray()
+    cast_str = movieData['cast'].apply(clean_person_string)
+    director_str = movieData['director'].apply(clean_person_string)
+    editor_str = movieData['editor'].apply(clean_person_string)
+    writer_str = movieData['writer'].apply(clean_person_string)
+
+    people_df = pd.DataFrame([cast_str,director_str,editor_str,writer_str])
+
+    people_strings = people_df.apply( lambda x:  ' '.join(x) , axis=0)
+
+    personFeatures = person_vect.fit_transform(people_strings).toarray()
+
+    print plotFeatures.shape,personFeatures.shape
+
+    movieFeatures = np.concatenate([plotFeatures,personFeatures],axis=1)
+
+    print movieFeatures.shape
+
+    return movieFeatures
 
 
 #The first iteration here will be just using plot
 if __name__ == '__main__':
 
-    #Data on each movie from IMDB
-    movieData = pd.read_csv('movieData.csv')
+    scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
+    scrapedMovieData = scrapedMovieData.fillna('')
 
-    #Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv', nrows = 200000)
+    # Movie Lens rating data
+    movieratings = pd.read_csv('ratings.csv')
 
-    #A matrix (num movies , num features) that has the feature representation of each movie
-    featMat = featureMatrix()
+    # List of movies in order
+    movieLenseMovies = pd.read_csv('movies.csv')
+
+    featMat = featureMatrix(scrapedMovieData)
+
+    movieLenseMovies.drop('genres', axis=1, inplace=True)
+
+    mergedScrape_ML = pd.merge(scrapedMovieData, movieLenseMovies, left_on='movie_len_title',
+                               right_on='title',
+                               how='left')
+
+    mergedScrape_ML.drop_duplicates(subset='movie_len_title', inplace=True)
 
     #User and movie ids mapped to be on continuous interval
-    user_idx, movie_idx, num_users, num_movie = HybridCollabFilter.map2idx(movieratings)
+    triples, num_users, num_movie = HybridCollabFilter.map2idx(movieratings,mergedScrape_ML)
 
-    #REMOVE THIS
-    movie_idx = filter( lambda x: x  < 20,movie_idx)
-    #print (len(movie_idx))
+    user_idx = triples[:,0]
+    movie_idx = triples[ :,1]
+    ratings = triples[:, 2]
 
+    movieFeatures = featMat[movie_idx.astype(int)]
 
-    user_idx = user_idx
-    movieFeatures =  featMat[movie_idx]
-    ratings = movieratings.ix[:, 2].values
-
-    #REMOVE THIS
-    user_idx = np.random.randint(0,50,911)
-    ratings = ratings[0:911]
 
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(50, 10, 200)
-    movieModel.train(user_idx, movieFeatures, ratings)
+    movieModel = HybridCollabFilter(num_users, 10, movieFeatures.shape[1])
+    movieModel.train(user_idx, movieFeatures, ratings, eval_type = "MSE")
+
