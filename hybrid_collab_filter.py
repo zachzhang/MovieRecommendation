@@ -5,6 +5,7 @@ import pandas as pd
 import sklearn
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
@@ -13,8 +14,9 @@ class HybridCollabFilter():
         # hyper parameters
         self.batch_size = 512
         self.numUsers = numUsers
-        self.epochs = 30
+        self.epochs = 50
         self.init_var =.01
+        self.l = .0002
 
         #Movie Features
         self.movieFeatures = tf.placeholder(tf.float32, shape=(None,input_dim))
@@ -40,9 +42,9 @@ class HybridCollabFilter():
         # predicted rating is dot product of user and movie
         self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
 
-        self.cost = tf.nn.l2_loss(self.yhat - self.rating)
+        self.cost = tf.nn.l2_loss(self.yhat - self.rating) + tf.reduce_mean(self.l * self.W ) + tf.reduce_mean(self.l * self.b )
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.002).minimize(self.cost)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -131,8 +133,6 @@ class HybridCollabFilter():
         uni_users = movieratings['userId'].unique()
         uni_movies = mergedScrape_ML['movieId'].unique()
 
-        print len(uni_movies)
-
         # dict mapping the id to an index
         user_map = dict(zip(uni_users, range(len(uni_users))))
         movie_map = dict(zip(uni_movies, range(len(uni_movies))))
@@ -159,9 +159,10 @@ def clean_person_string(raw_text):
 
 
 def featureMatrix(movieData):
-
-    plot_vect = CountVectorizer(max_features=200)
-    person_vect = CountVectorizer(max_features=100)
+    #TfidfVectorizer
+    #plot_vect = CountVectorizer(stop_words='english',max_features=2000,max_df=.9,min_df=.02,ngram_range =(1,2))
+    plot_vect = TfidfVectorizer(stop_words='english',max_features=2000,max_df=.9,min_df=.02)
+    person_vect = TfidfVectorizer(max_features=400,max_df=.9,min_df=30)
 
     plotFeatures = plot_vect.fit_transform(movieData['plot']).toarray()
 
@@ -176,7 +177,7 @@ def featureMatrix(movieData):
 
     personFeatures = person_vect.fit_transform(people_strings).toarray()
 
-    print plotFeatures.shape,personFeatures.shape
+    print person_vect.vocabulary_
 
     movieFeatures = np.concatenate([plotFeatures,personFeatures],axis=1)
 
@@ -193,6 +194,8 @@ if __name__ == '__main__':
 
     # Movie Lens rating data
     movieratings = pd.read_csv('ratings.csv')
+
+    print movieratings.shape
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -216,8 +219,7 @@ if __name__ == '__main__':
 
     movieFeatures = featMat[movie_idx.astype(int)]
 
-
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 10, movieFeatures.shape[1])
+    movieModel = HybridCollabFilter(num_users, 15, movieFeatures.shape[1])
     movieModel.train(user_idx, movieFeatures, ratings, eval_type = "MSE")
 
