@@ -71,7 +71,7 @@ class HybridCollabFilter():
         return users_train,movies_train,ratings_train , users_test,movies_test,ratings_test
 
 
-    def train(self, users, movies, ratings, eval_type = 'AUC', val_freq=5):
+    def train(self, users, movies, ratings,featMat, eval_type = 'AUC', val_freq=5):
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
             self.train_test_split(users,movies,ratings)
@@ -87,12 +87,14 @@ class HybridCollabFilter():
                 ratings_batch  = ratings_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
 
                 users_batch = users_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
-                movie_batch = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
+                movie_ids = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+                movie_batch = featMat[movie_ids]
+
 
                 avg_cost +=  (self.session.run([self.cost, self.optimizer],
                                              {self.users: users_batch, self.movieFeatures: movie_batch,
                                               self.rating: ratings_batch})[0] ) / self.batch_size
-
 
 
             print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
@@ -118,7 +120,7 @@ class HybridCollabFilter():
 
                 if eval_type == 'MSE':
                     mse = self.session.run(self.cost,
-                                     {self.users: users_test, self.movieFeatures: movies_test,
+                                     {self.users: users_test, self.movieFeatures: featMat[movies_test],
                                       self.rating: ratings_test}) / len(users_test)
 
                     print ("Testing MSE: ", mse)
@@ -177,11 +179,7 @@ def featureMatrix(movieData):
 
     personFeatures = person_vect.fit_transform(people_strings).toarray()
 
-    print person_vect.vocabulary_
-
     movieFeatures = np.concatenate([plotFeatures,personFeatures],axis=1)
-
-    print movieFeatures.shape
 
     return movieFeatures
 
@@ -193,9 +191,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv')
-
-    print movieratings.shape
+    movieratings = pd.read_csv('ratings.csv').sample()
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -217,9 +213,12 @@ if __name__ == '__main__':
     movie_idx = triples[ :,1]
     ratings = triples[:, 2]
 
-    movieFeatures = featMat[movie_idx.astype(int)]
+    movie_idx = movie_idx.astype(int)
+    #movieFeatures = featMat[movie_idx.astype(int)]
+
+    #print movieFeatures.shape
 
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 15, movieFeatures.shape[1])
-    movieModel.train(user_idx, movieFeatures, ratings, eval_type = "MSE")
+    movieModel = HybridCollabFilter(num_users, 15, featMat.shape[1])
+    movieModel.train(user_idx,movie_idx, ratings,featMat, eval_type = "MSE")
 
