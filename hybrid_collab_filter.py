@@ -7,6 +7,7 @@ from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+
 class HybridCollabFilter():
 
     def __init__(self, numUsers, embedding_dim,input_dim):
@@ -16,7 +17,7 @@ class HybridCollabFilter():
         self.numUsers = numUsers
         self.epochs = 50
         self.init_var =.01
-        self.l = .0002
+        self.l = .001
 
         #Movie Features
         self.movieFeatures = tf.placeholder(tf.float32, shape=(None,input_dim))
@@ -181,6 +182,8 @@ def featureMatrix(movieData):
 
     movieFeatures = np.concatenate([plotFeatures,personFeatures],axis=1)
 
+    #movieFeatures = plotFeatures
+
     return movieFeatures
 
 
@@ -191,7 +194,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample()
+    movieratings = pd.read_csv('ratings.csv').sample(8000000)
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -218,7 +221,8 @@ if __name__ == '__main__':
 
     #print movieFeatures.shape
 
+    print(featMat.shape[1])
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 15, featMat.shape[1])
+    movieModel = HybridCollabFilter(num_users, 20, featMat.shape[1])
     movieModel.train(user_idx,movie_idx, ratings,featMat, eval_type = "MSE")
 
