@@ -192,9 +192,8 @@ if __name__ == '__main__':
 
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
     scrapedMovieData = scrapedMovieData.fillna('')
-
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample(8000000)
+    movieratings = pd.read_csv('ratings.csv', nrows = 1000000)
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -219,10 +218,14 @@ if __name__ == '__main__':
     movie_idx = movie_idx.astype(int)
     #movieFeatures = featMat[movie_idx.astype(int)]
 
-    #print movieFeatures.shape
-
-    print(featMat.shape[1])
+    #image features
+    imageFeatures = pd.read_csv('imagefeatures.csv', header=None)
+    imageFeatures = imageFeatures.as_matrix()
+    print(imageFeatures.shape)
+    
+    allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
+    
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 20, featMat.shape[1])
-    movieModel.train(user_idx,movie_idx, ratings,featMat, eval_type = "MSE")
+    movieModel = HybridCollabFilter(num_users, 20, imageFeatures.shape[1] + featMat.shape[1])
+    movieModel.train(user_idx,movie_idx, ratings,allfeatures, eval_type = "MSE")
 
