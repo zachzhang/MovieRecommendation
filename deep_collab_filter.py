@@ -97,6 +97,10 @@ class HybridCollabFilter():
                                               {self.users: users_batch, self.lstmFeatures: lstm_batch,
                                                self.rating: ratings_batch})[0]) / self.batch_size
 
+		print (self.session.run([self.cost, self.optimizer],
+                                              {self.users: users_batch, self.lstmFeatures: lstm_batch,
+                                               self.rating: ratings_batch})[0]) / self.batch_size
+
             print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
 
             if i % val_freq == 0:
@@ -165,7 +169,7 @@ def lstmFeatures(movieData):
     args.n = 2000
     args.word2vec = False
     args.embedSize = 50
-    args.max_len = 40
+    args.max_len = 20
     preprocessor = WordSequencePreProcessor(args)
     preprocessor.fit(movieData['plot'])
 
