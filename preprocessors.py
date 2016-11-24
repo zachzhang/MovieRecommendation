@@ -65,7 +65,7 @@ class BowPreProcessor(PreProcessor):
 
     def fit(self, raw_text):
 
-        print 'Fitting Vectorizer'
+        print('Fitting Vectorizer')
         if self.args.n == None:
             # create the initial vocabulary from the extracted text
             vectorizer = CountVectorizer(analyzer="word", stop_words='english')
@@ -79,19 +79,13 @@ class BowPreProcessor(PreProcessor):
 
             inital_vocab = vectorizer.vocabulary_
 
-            print 'Building Embedding'
-            # print inital_vocab
-            # Get the embedded form of the vocabulary (some of the words in our corpus might not be in word2vec)
-            w2v = models.Word2Vec.load_word2vec_format('/Users/Hadoop/Desktop/glove-to-word2vec/glove_model2.txt', binary=True)
-            new_voc = down_size_word2vec(inital_vocab, w2v)
+            print('Building Embedding')
+            new_voc , self.embedding_mat = load_glove(inital_vocab)
 
-            print 'Finalizing Vectorizer'
+            print('Finalizing Vectorizer')
             vectorizer2 = CountVectorizer(analyzer="word", stop_words='english', max_features=None, vocabulary=new_voc)
 
-            self.embedding_mat = w2v_matrix(new_voc, w2v)
             self.vectorizer = vectorizer2
-
-            print self.embedding_mat.shape
 
         else:
 
@@ -121,7 +115,7 @@ class BowW2VPreProcessor(PreProcessor):
 
         args = self.args
 
-        print 'Fitting Vectorizer'
+        print('Fitting Vectorizer')
         if args.n == None:
             # create the initial vocabulary from the extracted text
             vectorizer = CountVectorizer(analyzer="word", stop_words=self.stop_words)
@@ -132,13 +126,13 @@ class BowW2VPreProcessor(PreProcessor):
         vectorizer.fit(raw_text)
         inital_vocab = vectorizer.vocabulary_
 
-        print 'Building Embedding'
+        print('Building Embedding')
         # print inital_vocab
         # Get the embedded form of the vocabulary (some of the words in our corpus might not be in word2vec)
         w2v = models.Word2Vec.load_word2vec_format('./data/GoogleNews-vectors-negative300.bin', binary=True)
         new_voc = down_size_word2vec(inital_vocab, w2v)
 
-        print 'Finalizing Vectorizer'
+        print('Finalizing Vectorizer')
         vectorizer2 = CountVectorizer(analyzer="word", stop_words='english', max_features=None, vocabulary=new_voc)
 
         self.embedding_mat = w2v_matrix(new_voc, w2v)
@@ -228,7 +222,7 @@ class WordSequencePreProcessor(PreProcessor):
 
     def transform(self, text):
 
-        vocab = self.vect.vectorizer.vocabulary_
+        vocab = self.vect.vectorizer.vocabulary
 
         X = []
         lengths = []
@@ -241,11 +235,11 @@ class WordSequencePreProcessor(PreProcessor):
             X.append(index)
             lengths.append(len(index))
 
-        print 'Average Seq Leng: ' , np.array(lengths).mean()
+        print('Average Seq Leng: ' , np.array(lengths).mean())
 
         # convert to numpy array for efficent storage
         X = pad_sequences(X, maxlen=self.args.max_len, value=-1)
-        X = X +2
+        X = X +1
 
         return X
 

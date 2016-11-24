@@ -15,6 +15,33 @@ def char2index(text, char_dict):
         return processed
 
 
+def load_glove(vocab):
+
+    embedding_mat = [np.random.randn(50)]
+    new_vocab= {}
+
+    count = 1
+
+    with open('glove.6B.50d.txt') as f:
+        words_to_load = 400000
+
+        for i, line in enumerate(f):
+
+            if i >= words_to_load:
+                break
+
+            s = line.split()
+
+            if s[0] in vocab:
+                embedding_mat.append( np.asarray(s[1:]) )
+                #new_vocab.append(s[0])
+                new_vocab[s[0]] = count
+                count += 1
+
+    return new_vocab,np.array(embedding_mat)
+
+
+
 def down_size_word2vec(vocab, w2v, new_w2v=None):
 
         lines = []
