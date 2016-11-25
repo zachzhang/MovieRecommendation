@@ -210,6 +210,9 @@ def main(_):
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
     scrapedMovieData = scrapedMovieData.fillna('')
     titles = scrapedMovieData['movie_len_title']
+    print(scrapedMovieData.shape)
+    print(titles.shape)
+    sys.exit(0)
     imagefeatures = np.zeros([scrapedMovieData.shape[1],2048])
     for idx, title in enumerate(titles): 
         imagelocation = 'data/moviecovers/' + title
@@ -218,7 +221,7 @@ def main(_):
             imagefeatures[idx, :] = run_inference_on_image(imagelocation)
             print(idx)
             #print(imagefeatures[idx,:])
-    np.savetxt('imagefeatures.csv', imagefeatures, delimiter=',')
+    np.savetxt('imagefeaturesredone.csv', imagefeatures, delimiter=',')
     return
     
 
