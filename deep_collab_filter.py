@@ -2,56 +2,67 @@ import tensorflow as tf
 import sys
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+import tflearn
+import argparse
+from preprocessors import WordSequencePreProcessor
+from tflearn.layers.embedding_ops import embedding
 
 class HybridCollabFilter():
-
-    def __init__(self, numUsers, embedding_dim,input_dim):
+    def __init__(self, numUsers, embedding_dim, input_dim,seq_len,word_embed,embed_mat):
 
         # hyper parameters
-        self.batch_size = 32
+        self.batch_size = 512
         self.numUsers = numUsers
-        self.epochs = 100
-        self.init_var =.01
+        self.epochs = 50
+        self.init_var = .01
+        self.l = .001
+        self.h = 128
+        self.word_embed = word_embed
+        # Movie Features
+        #self.movieFeatures = tf.placeholder(tf.float32, shape=(None, input_dim))
+        #self.movieFeatures = tf.placeholder(tf.int32, shape=(None, seq_len))
+        self.lstmFeatures = tf.placeholder(tf.int32, shape=(None, seq_len))
 
-        #Movie Features
-        self.movieFeatures = tf.placeholder(tf.float32, shape=(None,input_dim))
-
-        # input tensors for songs, usres, ratings
+        # input tensors for movies, usres, ratings
         self.users = tf.placeholder(tf.int32, shape=(None))
         self.rating = tf.placeholder(tf.float32, shape=(None))
 
         # embedding matricies for users
-        self.userMat = tf.Variable(self.init_var*tf.random_normal([numUsers, embedding_dim]))
-        self.userBias = tf.Variable(self.init_var*tf.random_normal([numUsers,]))
+        self.userMat = tf.Variable(self.init_var * tf.random_normal([numUsers, embedding_dim]))
+        self.userBias = tf.Variable(self.init_var * tf.random_normal([numUsers, ]))
 
-        #Model parameters for movies
-        self.W = tf.Variable(self.init_var*tf.random_normal([input_dim, embedding_dim]))
-        self.b = tf.Variable(self.init_var*tf.random_normal([embedding_dim]))
+        self.E = tf.Variable(embed_mat)
 
-        movieTensor = tf.matmul(self.movieFeatures,self.W) + self.b
+        movieTensor = tf.nn.embedding_lookup(self.E, self.lstmFeatures)
+        movieTensor = tf.cast(movieTensor, tf.float32)
+        movieTensor = tf.unpack(movieTensor,axis=1)
 
-        # map each user/song to its feature vector
+        movieTensor = tflearn.lstm(movieTensor, self.h)
+        movieTensor = tflearn.fully_connected(movieTensor, embedding_dim, activation='linear')
+
+        # map each user/movie to its feature vector
         self.U = tf.nn.embedding_lookup(self.userMat, self.users)
         self.u_b = tf.nn.embedding_lookup(self.userBias, self.users)
 
-        # predicted rating is dot product of user and song
-        self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
+        # predicted rating is dot product of user and movie
+        self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor), 1) + self.u_b
 
         self.cost = tf.nn.l2_loss(self.yhat - self.rating)
 
-        self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=.001).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
 
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
 
+    def train_test_split(self, users, movies, ratings, split=.1):
 
-    def train_test_split(self,users,movies,ratings,split=.1):
+        shuffle = np.random.permutation(len(users))
 
-        shuffle  = np.random.permutation(len(users))
-
-        partition = np.floor(len(users) * (1-split))
+        partition = np.floor(len(users) * (1 - split))
 
         train_idx = shuffle[:partition]
         test_idx = shuffle[partition:]
@@ -65,13 +76,12 @@ class HybridCollabFilter():
         ratings_train = ratings[train_idx]
         ratings_test = ratings[test_idx]
 
-        return users_train,movies_train,ratings_train , users_test,movies_test,ratings_test
+        return users_train, movies_train, ratings_train, users_test, movies_test, ratings_test
 
-
-    def train(self, users, movies, ratings,val_freq=5):
+    def train(self, users, movies, ratings, featMat,wordSeq, eval_type='AUC', val_freq=5):
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
-            self.train_test_split(users,movies,ratings)
+            self.train_test_split(users, movies, ratings)
 
         num_batches = movies_train.shape[0] // self.batch_size
 
@@ -80,108 +90,151 @@ class HybridCollabFilter():
             avg_cost = 0
 
             for b_idx in range(num_batches):
-
-                ratings_batch  = ratings_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+                ratings_batch = ratings_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
 
                 users_batch = users_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
-                movie_batch = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
 
-                avg_cost +=  (self.session.run([self.cost, self.optimizer],
-                                             {self.users: users_batch, self.movieFeatures: movie_batch,
-                                              self.rating: ratings_batch})[0] ) / self.batch_size
+                movie_ids = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+                movie_batch = featMat[movie_ids]
+                lstm_batch = wordSeq[movie_ids]
 
-            print "Epoch: ",i, " Average Cost: ",avg_cost / num_batches
+                avg_cost += (self.session.run([self.cost, self.optimizer],
+                                              {self.users: users_batch, self.lstmFeatures: lstm_batch,
+                                               self.rating: ratings_batch})[0]) / self.batch_size
 
-            if i % val_freq ==0:
+            print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
 
-                oos_cost = self.session.run(self.cost, {self.users: users_test, self.movieFeatures: movies_test,
-                                              self.rating: ratings_test})
+            if i % val_freq == 0:
+                if eval_type == 'AUC':
+                    auc_mean = 0
+                    uni_users = np.unique(users_test)
+                    for usr in uni_users:
+                        usr_idxes = users_test == usr
+                        usr_idxes = np.where(usr_idxes)
+                        usr_u = users_test[usr_idxes]
+                        movie_u = movies_test[usr_idxes]
+                        rtg_u = ratings_test[usr_idxes]
+                        if len(usr_u) < 3:
+                            continue
+                        yhat = (self.session.run([self.yhat],
+                                                 {self.users: usr_u, self.movieFeatures: movie_u,
+                                                  self.rating: rtg_u})[0])
+                        auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder=True) / len(uni_users)
 
-                print "Testing Loss: " , oos_cost / len(users_test)
+                    print ("Testing AUC mean: ", auc_mean)
+
+                if eval_type == 'MSE':
+                    mse = self.session.run(self.cost,
+                                           {self.users: users_test, self.movieFeatures: featMat[movies_test],
+                                            self.rating: ratings_test}) / len(users_test)
+
+                    print ("Testing MSE: ", mse)
 
     @staticmethod
-    def map2idx(movieratings):
+    def map2idx(movieratings, mergedScrape_ML):
 
         users = movieratings['userId'].values
-        songs = movieratings['movieId'].values
+        movies = movieratings['movieId'].values
 
-        # unique users / songs
+        # unique users / movies
         uni_users = movieratings['userId'].unique()
-        uni_songs = movieratings['movieId'].unique()
+        uni_movies = mergedScrape_ML['movieId'].unique()
 
         # dict mapping the id to an index
         user_map = dict(zip(uni_users, range(len(uni_users))))
-        song_map = dict(zip(uni_songs, range(len(uni_songs))))
+        movie_map = dict(zip(uni_movies, range(len(uni_movies))))
 
-        user_idx = np.array([user_map[user] for user in users])
-        song_idx = np.array([song_map[song] for song in songs])
+        pairs = []
+        for user, movie, rating in zip(users, movies, movieratings['rating']):
+            if movie in movie_map:
+                pairs.append((user_map[user], movie_map[movie], rating))
 
-        return user_idx,song_idx,len(uni_users),len(uni_songs)
+        return np.array(pairs), len(uni_users), len(uni_movies)
 
 
-
-def clean_cast_string(raw_text):
-    n=10
-
-    if raw_text ==np.nan:
+def clean_person_string(raw_text):
+    if raw_text == '':
         return ''
 
     cast = raw_text.split('>')
-    cast = [ s.split(":_")[1] for s in cast]
-    cast = [ s.split(",")[1] +s.split(",")[0] for s in cast]
+    cast = [s.split(":_")[1] for s in cast[0:-1]]
+    cast = ["_".join(s.split(",")).replace(" ", "") for s in cast]
 
-    return " ".join(cast[0:n])
+    return " ".join(cast)
 
-def clean_director_string(raw_string):
 
-    director = raw_string.split(':_')[1].split('>')[0].split(',')
-    director = director[1] +director[0]
-    return director
+def lstmFeatures(movieData):
+
+    parser = argparse.ArgumentParser(description='Workday Text Classification Library')
+    args = parser.parse_args()
+    args.n = 2000
+    args.word2vec = True
+    args.embedSize = 50
+    args.max_len = 20
+
+    preprocessor = WordSequencePreProcessor(args)
+
+    preprocessor.fit(movieData['plot'])
+
+    X = preprocessor.transform(movieData['plot'])
+
+    return X, preprocessor.vect.embedding_mat.astype(np.float)
 
 def featureMatrix(movieData):
 
-    #Structured Data
-    rawplot = movieData['plot']
+    plot_vect = TfidfVectorizer(stop_words='english', max_features=2000, max_df=.9, min_df=.02)
+    person_vect = TfidfVectorizer(max_features=400, max_df=.9, min_df=30)
 
-    #Unstructured data
-    cast_str = movieData['cast'].apply(clean_cast_string)
-    #director_str = movieData['director'].apply(clean_director_string)
-    #producers = movieData['producers'].apply(clean_cast_string)
+    plotFeatures = plot_vect.fit_transform(movieData['plot']).toarray()
 
-    print cast_str
+    cast_str = movieData['cast'].apply(clean_person_string)
+    director_str = movieData['director'].apply(clean_person_string)
+    editor_str = movieData['editor'].apply(clean_person_string)
+    writer_str = movieData['writer'].apply(clean_person_string)
 
-#The first iteration here will be just using plot
+    people_df = pd.DataFrame([cast_str, director_str, editor_str, writer_str])
+
+    people_strings = people_df.apply(lambda x: ' '.join(x), axis=0)
+
+    personFeatures = person_vect.fit_transform(people_strings).toarray()
+
+    movieFeatures = np.concatenate([plotFeatures, personFeatures], axis=1)
+
+    return movieFeatures
+
+
+# The first iteration here will be just using plot
 if __name__ == '__main__':
 
-    #Data on each movie from IMDB
-    movieData = pd.read_csv('/Users/Hadoop/Desktop/movieData.csv')
+    scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
+    scrapedMovieData = scrapedMovieData.fillna('')
 
-    featMat = featureMatrix(movieData)
+    # Movie Lens rating data
+    movieratings = pd.read_csv('ratings.csv').sample(8000000)
 
-    '''featMat = featureMatrix()
-    #Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv')
+    # List of movies in order
+    movieLenseMovies = pd.read_csv('movies.csv')
 
-    #A matrix (num movies , num features) that has the feature represenetion of each movie
-    featMat = featureMatrix()
+    movieLenseMovies.drop('genres', axis=1, inplace=True)
 
-    #User and movie ids mapped to be on continuous interval
-    user_idx, movie_idx, num_users, num_movie = HybridCollabFilter.map2idx(movieratings)
+    #featMat = featureMatrix(scrapedMovieData)
+    word_seq,embed_mat = lstmFeatures(scrapedMovieData)
 
-    #REMOVE THIS
-    movie_idx = filter( lambda x: x  < 20,movie_idx)
-    print len(movie_idx)
+    mergedScrape_ML = pd.merge(scrapedMovieData, movieLenseMovies, left_on='movie',
+                               right_on='title',
+                               how='left')
+    mergedScrape_ML.drop_duplicates(subset='movie', inplace=True)
 
+    # User and movie ids mapped to be on continuous interval
+    triples, num_users, num_movie = HybridCollabFilter.map2idx(movieratings, mergedScrape_ML)
 
-    user_idx = user_idx
-    movieFeatures =  featMat[movie_idx]
-    ratings = movieratings.ix[:, 2].values
+    user_idx = triples[:, 0]
+    movie_idx = triples[:, 1]
+    ratings = triples[:, 2]
 
-    #REMOVE THIS
-    user_idx = np.random.randint(0,50,911)
-    ratings = ratings[0:911]
+    movie_idx = movie_idx.astype(int)
 
-    #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(50, 10, 200)
-    movieModel.train(user_idx, movieFeatures, ratings)
-    '''
+    # (self, numUsers, embedding_dim,input_dim):
+    movieModel = HybridCollabFilter(num_users, 20, -1,20,50,embed_mat)
+    movieModel.train(user_idx, movie_idx, ratings, np.zeros((30000, 10)),word_seq, eval_type="MSE")
+
