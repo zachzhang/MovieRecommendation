@@ -43,7 +43,7 @@ class HybridCollabFilter():
         self.W_meta = tf.Variable(self.init_var*tf.random_normal([inputdim_meta, edim_meta]))
         self.b_meta = tf.Variable(self.init_var*tf.random_normal([edim_meta]))
 
-        customTensor = tf.nn.embedding_lookup(self.tfCustomFeatures, self.songs)
+        customTensor = tf.nn.embedding_lookup(self.tfCustomFeatures, self.movies)
         imageTensor = tf.matmul(self.imageFeatures,self.W_image) + self.b_image
         metaTensor = tf.matmul(self.metaFeatures,self.W_meta) + self.b_meta
         movieTensor = tf.concat(0, [imageTensor, metaTensor, customTensor])
@@ -85,7 +85,7 @@ class HybridCollabFilter():
         return users_train,movies_train,ratings_train , users_test,movies_test,ratings_test
 
 
-    def train(self, users, movies, ratings,featMat, eval_type = 'AUC', val_freq=5):
+    def train(self, users, movies, ratings,imageFeatures, metaFeatures, eval_type = 'AUC', val_freq=5):
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
             self.train_test_split(users,movies,ratings)
@@ -103,12 +103,16 @@ class HybridCollabFilter():
                 users_batch = users_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
 
                 movie_ids = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
-                movie_batch = featMat[movie_ids]
+                movie_batch = movie_ids
+                image_batch = imageFeatures[movie_ids]
+                meta_batch = metaFeatures[movie_ids]
 
 
                 avg_cost +=  (self.session.run([self.cost, self.optimizer],
-                                             {self.users: users_batch, self.movieFeatures: movie_batch,
-                                              self.rating: ratings_batch})[0] ) / self.batch_size
+                                   {self.users: users_batch, self.imageFeatures: image_batch,
+                                    self.metaFeatures: meta_batch,
+                                    self.movies: movie_batch,
+                                    self.rating: ratings_batch})[0] ) / self.batch_size
 
 
             print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
@@ -243,9 +247,9 @@ if __name__ == '__main__':
     edims_image = [3, 5]
     tf_custom_dim = [3, 5]
     meta_dims = [3, 5]
-    errmat = np.zeros([len(edims_image), len(reg_l), len(meta_dims)])
+    errmat = np.zeros([len(meta_dims), len(tf_custom_dim), len(edims_image)])
     #(self, numUsers, embedding_dim,input_dim):
-    for meta_idx, meta_dim in enumerate(meta_dims)
+    for meta_idx, meta_dim in enumerate(meta_dims):
         for imagedim_idx, imagedim in enumerate(edims_image):
             for tfdim_idx, tfdim in enumerate(tf_custom_dim):
                 movieModel = HybridCollabFilter(num_users, edim_image = imagedim, 
