@@ -10,19 +10,20 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, inputdim_image = None, edim_image = 5, edim_meta = 5,
-                 reg_l = .001, edim_custom_tf = 3):
+    def __init__(self, numUsers, numMovies, inputdim_image = None, inputdim_meta = None, 
+                 edim_image = 5, edim_meta = 5, reg_l = .001, edim_custom_tf = 3):
         
         edim_user = edim_image + edim_custom_tf + edim_meta
         # hyper parameters
         self.batch_size = 512
         self.numUsers = numUsers
+        self.numMovies = numMovies
         self.epochs = 4
         self.init_var =.01
         self.l = reg_l
 
         #Movie Features
-        self.CustomFeatsMat = tf.Variable(tf.random_normal([None, embedding_dim]))
+        self.CustomFeatsMat = tf.Variable(tf.random_normal([numMovies, edim_custom_tf]))
         self.imageFeatures = tf.placeholder(tf.float32, shape=(None,inputdim_image))
         self.metaFeatures = tf.placeholder(tf.float32, shape=(None,inputdim_meta))
         
@@ -32,7 +33,8 @@ class HybridCollabFilter():
         self.rating = tf.placeholder(tf.float32, shape=(None))
 
         # embedding matricies for users
-        self.tfCustomFeatures = tf.Variable(tf.random_normal([None, edim_custom_tf]))
+        self.tfCustomFeatures = tf.Variable(
+                    self.init_var*tf.random_normal([numMovies, edim_custom_tf]))
         self.userMat = tf.Variable(self.init_var*tf.random_normal([numUsers, edim_user]))
         self.userBias = tf.Variable(self.init_var*tf.random_normal([numUsers,]))
 
@@ -46,7 +48,7 @@ class HybridCollabFilter():
         customTensor = tf.nn.embedding_lookup(self.tfCustomFeatures, self.movies)
         imageTensor = tf.matmul(self.imageFeatures,self.W_image) + self.b_image
         metaTensor = tf.matmul(self.metaFeatures,self.W_meta) + self.b_meta
-        movieTensor = tf.concat(0, [imageTensor, metaTensor, customTensor])
+        movieTensor = tf.concat(1, [imageTensor, metaTensor, customTensor])
         
         # map each user/movie to its feature vector
         self.U = tf.nn.embedding_lookup(self.userMat, self.users)
@@ -54,11 +56,14 @@ class HybridCollabFilter():
 
         # predicted rating is dot product of user and movie
         self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
-
+        
         self.cost = tf.nn.l2_loss(self.yhat - self.rating) + \
-                    tf.reduce_mean(self.l * self.W ) + tf.reduce_mean(self.l * self.b )
+                    tf.reduce_mean(self.l * self.W_image ) + \
+                    tf.reduce_mean(self.l * self.b_image ) + \
+                    tf.reduce_mean(self.l * self.W_meta ) + \
+                    tf.reduce_mean(self.l * self.b_meta )
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.002).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -130,8 +135,10 @@ class HybridCollabFilter():
                         if len(usr_u) < 3:
                             continue
                         yhat = (self.session.run([self.yhat],
-                                                 {self.users: usr_u, self.movieFeatures: movie_u,
-                                                  self.rating: rtg_u})[0] )
+                                                 {self.users: usr_u, self.movies: movie_u,
+                                                      self.imageFeatures: image_batch,
+                                                      self.metaFeatures: meta_batch,
+                                                      self.rating: rtg_u})[0] )
                         auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
 
                     print ("Testing AUC mean: " , auc_mean)
@@ -139,8 +146,11 @@ class HybridCollabFilter():
 
                 if eval_type == 'MSE':
                     mse = self.session.run(self.cost,
-                                     {self.users: users_test, self.movieFeatures: featMat[movies_test],
-                                      self.rating: ratings_test}) / len(users_test)
+                                     {self.users: users_test, 
+                                          self.imageFeatures: imageFeatures[movies_test],
+                                          self.metaFeatures: metaFeatures[movies_test],
+                                          self.movies: movies_test,
+                                          self.rating: ratings_test}) / len(users_test)
 
                     print ("Testing MSE: ", mse)
                     err = mse
@@ -241,23 +251,23 @@ if __name__ == '__main__':
     #image features
     imageFeatures = pd.read_csv('imagefeatures.csv', header=None)
     imageFeatures = imageFeatures.as_matrix()
-    print(imageFeatures.shape)
     
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
     edims_image = [3, 5]
     tf_custom_dim = [3, 5]
-    meta_dims = [3, 5]
+    meta_dims = [5, 10]
     errmat = np.zeros([len(meta_dims), len(tf_custom_dim), len(edims_image)])
     #(self, numUsers, embedding_dim,input_dim):
     for meta_idx, meta_dim in enumerate(meta_dims):
         for imagedim_idx, imagedim in enumerate(edims_image):
             for tfdim_idx, tfdim in enumerate(tf_custom_dim):
-                movieModel = HybridCollabFilter(num_users, edim_image = imagedim, 
+                movieModel = HybridCollabFilter(num_users, num_movie, edim_image = imagedim, 
                                                 inputdim_image = imageFeatures.shape[1],
                                                 inputdim_meta = featMat.shape[1],
-                                                reg_l = reg, edim_custom_tf = tfdim)
+                                                edim_custom_tf = tfdim)
                 errmat[meta_idx, imagedim_idx, tfdim_idx] = \
                         movieModel.train(user_idx,movie_idx, ratings, 
-                                         imageFeatures, metaFeatures, eval_type = "MSE")
+                                         imageFeatures = imageFeatures, 
+                                         metaFeatures = featMat, eval_type = "MSE")
     print(errmat)
 
