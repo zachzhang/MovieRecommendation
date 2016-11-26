@@ -10,14 +10,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, embedding_dim,input_dim):
+    def __init__(self, numUsers, embedding_dim,input_dim, reg_l = .001):
 
         # hyper parameters
-        self.batch_size = 512
+        self.batch_size = 512 
         self.numUsers = numUsers
-        self.epochs = 50
+        self.epochs = 4
         self.init_var =.01
-        self.l = .001
+        self.l = reg_l
 
         #Movie Features
         self.movieFeatures = tf.placeholder(tf.float32, shape=(None,input_dim))
@@ -43,7 +43,8 @@ class HybridCollabFilter():
         # predicted rating is dot product of user and movie
         self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
 
-        self.cost = tf.nn.l2_loss(self.yhat - self.rating) + tf.reduce_mean(self.l * self.W ) + tf.reduce_mean(self.l * self.b )
+        self.cost = tf.nn.l2_loss(self.yhat - self.rating) + \
+                    tf.reduce_mean(self.l * self.W ) + tf.reduce_mean(self.l * self.b )
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=.002).minimize(self.cost)
         
@@ -100,7 +101,7 @@ class HybridCollabFilter():
 
             print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
 
-            if i % val_freq ==0:
+            if i % val_freq ==0 or i == self.epochs - 1:
                 if eval_type == 'AUC':
                     auc_mean = 0
                     uni_users = np.unique(users_test)
@@ -118,6 +119,7 @@ class HybridCollabFilter():
                         auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
 
                     print ("Testing AUC mean: " , auc_mean)
+                    err = auc_auc
 
                 if eval_type == 'MSE':
                     mse = self.session.run(self.cost,
@@ -125,6 +127,8 @@ class HybridCollabFilter():
                                       self.rating: ratings_test}) / len(users_test)
 
                     print ("Testing MSE: ", mse)
+                    err = mse
+        return err          
 
     @staticmethod
     def map2idx(movieratings, mergedScrape_ML):
@@ -193,7 +197,7 @@ if __name__ == '__main__':
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
     scrapedMovieData = scrapedMovieData.fillna('')
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv', nrows = 1000000)
+    movieratings = pd.read_csv('ratings.csv', nrows = 100000)
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -224,8 +228,16 @@ if __name__ == '__main__':
     print(imageFeatures.shape)
     
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
-    
+    edims = [5, 7]
+    reg_l = [1e-4, 1e-2]
+    errmat = np.zeros([len(edims), len(reg_l)])
     #(self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 20, imageFeatures.shape[1] + featMat.shape[1])
-    movieModel.train(user_idx,movie_idx, ratings,allfeatures, eval_type = "MSE")
+    for regidx, reg in enumerate(reg_l):
+        for eidx, edim in enumerate(edims):
+            movieModel = HybridCollabFilter(num_users, embedding_dim = edim, 
+                                            input_dim = imageFeatures.shape[1] + featMat.shape[1],
+                                            reg_l = reg)
+            errmat[regidx, eidx] = movieModel.train(user_idx,movie_idx, ratings,
+                                                   allfeatures, eval_type = "MSE")
+    print(errmat)
 
