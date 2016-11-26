@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, numMovies, inputdim_image = 2048, inputdim_meta = 873, 
+    def __init__(self, numUsers, numMovies, inputdim_image = None, inputdim_meta = None, 
                  edim_image = 5, edim_meta = 5, reg_l = .001, edim_custom_tf = 3,
                 edim_hidden_1 = 20, edim_hidden_2 = 15, edim_user = 10):
         
@@ -56,29 +56,31 @@ class HybridCollabFilter():
         
         self.movie_size = edim_image + edim_meta
         #hidden dimension weights
-        #self.W_hidden_1 = tf.Variable(self.init_var * 
-        #                              tf.random_normal([self.movie_size, edim_hidden_1]))
-        #self.W_hidden_2 = tf.Variable(self.init_var *
-        #                              tf.random_normal([edim_hidden_1, edim_hidden_2]))
-        self.W_hidden_output = tf.Variable(self.init_var *
-                                      tf.random_normal([self.movie_size,
-                                                        edim_user - edim_custom_tf]))
+        self.W_hidden_1 = tf.Variable(self.init_var * 
+                                      tf.random_normal([self.movie_size, edim_hidden_1]))
+        self.W_hidden_2 = tf.Variable(self.init_var *
+                                      tf.random_normal([edim_hidden_1, edim_hidden_2]))
+        self.W_hidden_output = tf.Variable(
+                self.init_var * tf.random_normal([edim_hidden_2, edim_user - edim_custom_tf]))
+        
+        self.b_hidden_1 = tf.Variable(tf.random_normal([edim_hidden_1]))
+        self.b_hidden_2 = tf.Variable(tf.random_normal([edim_hidden_2]))
+        self.b_hidden_output = tf.Variable(tf.random_normal([edim_user - edim_custom_tf]))
         
         #hidden dimension values
-        '''
-        self.fullyconnected1 = tf.reduce_sum(tf.mul(self.movieTensor, self.W_hidden_1) , 1)
+        self.fullyconnected1 = tf.matmul(self.movieTensor, self.W_hidden_1) + self.b_hidden_1
         self.sig_hidden_1 = tf.sigmoid(self.fullyconnected1)
-        self.act_hidden_1 = tf.concat(1, [sig_hidden_1])
+        self.act_hidden_1 = tf.concat(1, [self.sig_hidden_1])
         
-        self.fullyconnected2 = tf.reduce_sum(tf.mul(self.act_hidden_1, self.W_hidden_2) , 1)
+        self.fullyconnected2 = tf.matmul(self.act_hidden_1, self.W_hidden_2) + self.b_hidden_2
         self.sig_hidden_2 = tf.sigmoid(self.fullyconnected2)
-        self.act_hidden_2 = tf.concat(1, [sig_hidden_2])
-        '''
-        self.fullyconnectedoutput = tf.reduce_sum(tf.mul(self.movieTensor, self.W_hidden_output) , 1)
-        self.sig_hidden_output = tf.sigmoid(self.fullyconnectedoutput)
-        self.act_hidden_output = tf.concat(1, [sig_hidden_output])
+        self.act_hidden_2 = tf.concat(1, [self.sig_hidden_2])
         
-        self.movie_final_repr = tf.concat(1, [self.act_hidden_output, customTensor])
+        self.fullyconnectedoutput = tf.matmul(self.act_hidden_2, self.W_hidden_output) + self.b_hidden_output
+        self.sig_hidden_output = tf.sigmoid(self.fullyconnectedoutput)
+        self.act_hidden_output = tf.concat(1, [self.sig_hidden_output])
+        
+        self.movie_final_repr = tf.concat(1, [self.act_hidden_output, self.customTensor])
 
         
         # map each user/movie to its feature vector
@@ -86,7 +88,7 @@ class HybridCollabFilter():
         self.u_b = tf.nn.embedding_lookup(self.userBias, self.users)
 
         # predicted rating is dot product of user and movie
-        self.yhat = tf.reduce_sum(tf.mul(self.U, movie_final_repr) , 1) + self.u_b
+        self.yhat = tf.reduce_sum(tf.mul(self.U, self.movie_final_repr) , 1) + self.u_b
         
         self.cost = tf.nn.l2_loss(self.yhat - self.rating) + \
                     tf.reduce_mean(self.l * self.W_image ) + \
