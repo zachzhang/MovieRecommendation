@@ -10,16 +10,21 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, numMovies, inputdim_image = None, inputdim_meta = None, 
-                 edim_image = 5, edim_meta = 5, reg_l = .001, edim_custom_tf = 3,
-                edim_hidden_1 = 20, edim_hidden_2 = 15, edim_user = 10):
+    def __init__(self, numUsers, numMovies, reg_l = 1, 
+                 inputdim_image = None, inputdim_meta = None, 
+                 edim_image = 10, edim_meta = 10,
+                 edim_hidden_1 = 20, edim_hidden_2 = 20,
+                 edim_custom_tf = 10, edim_user = 20):
         
-        self.edim_user = edim_user
+        edim_hidden_output = edim_user - edim_custom_tf
+        edim_movie = edim_image + edim_meta
+        edim_hidden_output = edim_user - edim_custom_tf
+        
         # hyper parameters
         self.batch_size = 512
         self.numUsers = numUsers
         self.numMovies = numMovies
-        self.epochs = 4
+        self.epochs = 11
         self.init_var =.01
         self.l = reg_l
 
@@ -91,15 +96,16 @@ class HybridCollabFilter():
         self.yhat = tf.reduce_sum(tf.mul(self.U, self.movie_final_repr) , 1) + self.u_b
         
         self.cost = tf.nn.l2_loss(self.yhat - self.rating) + \
-                    tf.reduce_mean(self.l * self.W_image ) + \
-                    tf.reduce_mean(self.l * self.b_image ) + \
-                    tf.reduce_mean(self.l * self.W_meta ) + \
-                    tf.reduce_mean(self.l * self.b_meta ) + \
-                    tf.reduce_mean(self.l * self.W_hidden_1 ) + \
-                    tf.reduce_mean(self.l * self.W_hidden_2 ) + \
-                    tf.reduce_mean(self.l * self.W_hidden_output )
+                    tf.reduce_mean(self.l * tf.abs(self.W_image) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.b_image) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.W_meta) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.b_meta) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_1) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_2) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_output) )
+        self.learning_rate = 0.1
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.cost)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -130,24 +136,29 @@ class HybridCollabFilter():
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
             self.train_test_split(users,movies,ratings)
-
-        num_batches = movies_train.shape[0] // self.batch_size
+            
+        self.num_train = movies_train.shape[0]
+        self.num_test = movies_test.shape[0]
+        self.num_batches = self.num_train // self.batch_size
 
         for i in range(self.epochs):
-
+            self.adjust_from_quick_to_stable_training()
             avg_cost = 0
-
-            for b_idx in range(num_batches):
+            
+            for b_idx in range(self.num_batches):
 
                 ratings_batch  = ratings_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
-
                 users_batch = users_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
-
                 movie_ids = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+                
+                if b_idx == self.num_batches - 1:
+                    ratings_batch  = ratings_train[self.batch_size * b_idx:]
+                    users_batch = users_train[self.batch_size * b_idx:]
+                    movie_ids = movies_train[self.batch_size * b_idx:]
+
                 movie_batch = movie_ids
                 image_batch = imageFeatures[movie_ids]
                 meta_batch = metaFeatures[movie_ids]
-
 
                 avg_cost +=  (self.session.run([self.cost, self.optimizer],
                                    {self.users: users_batch, self.imageFeatures: image_batch,
@@ -156,7 +167,7 @@ class HybridCollabFilter():
                                     self.rating: ratings_batch})[0] ) / self.batch_size
 
 
-            print ("Epoch: ", i, " Average Cost: ",avg_cost / num_batches)
+            print ("Epoch: ", i, " Average Cost: ",avg_cost / self.num_batches)
 
             if i % val_freq ==0 or i == self.epochs - 1:
                 if eval_type == 'AUC':
@@ -181,16 +192,49 @@ class HybridCollabFilter():
                     err = auc_auc
 
                 if eval_type == 'MSE':
-                    mse = self.session.run(self.cost,
-                                     {self.users: users_test, 
-                                          self.imageFeatures: imageFeatures[movies_test],
-                                          self.metaFeatures: metaFeatures[movies_test],
-                                          self.movies: movies_test,
-                                          self.rating: ratings_test}) / len(users_test)
+                    self.test_batch_size = np.min((10000, self.num_test))
+                    self.test_num_batches = self.num_test // self.test_batch_size
+                    mse = 0
+                    
+                    for b_idx in range(self.test_num_batches):
+                        mse += self.get_mse(imageFeatures, metaFeatures, movie_ids,
+                            ratings_test, users_test, movies_test, b_idx)
 
                     print ("Testing MSE: ", mse)
                     err = mse
-        return err          
+        return err 
+    
+    def get_mse(self, imageFeatures, metaFeatures, movie_ids, 
+                ratings_test, users_test, movies_test, b_idx):
+        
+        ratings_batch  = ratings_test[self.test_batch_size * b_idx:self.test_batch_size * (b_idx + 1)]
+        users_batch = users_test[self.test_batch_size * b_idx:self.test_batch_size * (b_idx + 1)]
+        movie_ids = movies_test[self.test_batch_size * b_idx:self.test_batch_size * (b_idx + 1)]
+
+        if b_idx == self.test_num_batches - 1:
+            ratings_batch  = ratings_test[self.test_batch_size * b_idx:]
+            users_batch = users_test[self.test_batch_size * b_idx:]
+            movie_ids = movies_test[self.test_batch_size * b_idx:]
+            
+        movie_batch = movie_ids
+        image_batch = imageFeatures[movie_ids]
+        meta_batch = metaFeatures[movie_ids]
+
+        mse = self.session.run(self.cost,
+                               {self.users: users_test, 
+                                self.imageFeatures: imageFeatures[movies_test],
+                                self.metaFeatures: metaFeatures[movies_test],
+                                self.movies: movies_test,
+                                self.rating: ratings_test}) / len(users_batch)
+        return mse
+
+                    
+    
+    def adjust_from_quick_to_stable_training(self):
+        self.learning_rate = self.learning_rate * .9
+        self.batch_size = int(round(np.min((self.batch_size * 1.1, self.num_train))))
+        self.num_batches = self.num_train // self.batch_size
+
 
     @staticmethod
     def map2idx(movieratings, mergedScrape_ML):
@@ -289,8 +333,8 @@ if __name__ == '__main__':
     imageFeatures = imageFeatures.as_matrix()
     
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
-    edims_image = [3, 5]
-    tf_custom_dim = [3, 5]
+    edims_image = [5, 10]
+    tf_custom_dim = [5, 10]
     meta_dims = [5, 10]
     errmat = np.zeros([len(meta_dims), len(tf_custom_dim), len(edims_image)])
     #(self, numUsers, embedding_dim,input_dim):
