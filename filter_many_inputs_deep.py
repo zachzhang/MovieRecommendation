@@ -10,10 +10,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, numMovies, reg_l = 1, 
+    def __init__(self, numUsers, numMovies, reg_l = 1e-2, 
                  inputdim_image = None, inputdim_meta = None, 
                  edim_image = 3, edim_meta = 3,
-                 edim_hidden_1 = 20, edim_hidden_2 = 0,
+                 edim_hidden_1 = 30, edim_hidden_2 = 0,
                  edim_custom_tf = 3, edim_user = 10):
         
         edim_hidden_output = edim_user - edim_custom_tf
@@ -233,7 +233,7 @@ class HybridCollabFilter():
     
     def adjust_from_quick_to_stable_training(self):
         self.learning_rate = self.learning_rate * .9
-        self.batch_size = int(round(np.min((self.batch_size * 1.1, self.num_train))))
+        self.batch_size = int(round(np.min((self.batch_size * 1.5, self.num_train))))
         self.num_batches = self.num_train // self.batch_size
 
 
