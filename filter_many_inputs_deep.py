@@ -12,9 +12,9 @@ class HybridCollabFilter():
 
     def __init__(self, numUsers, numMovies, reg_l = 1, 
                  inputdim_image = None, inputdim_meta = None, 
-                 edim_image = 10, edim_meta = 10,
-                 edim_hidden_1 = 20, edim_hidden_2 = 20,
-                 edim_custom_tf = 10, edim_user = 20):
+                 edim_image = 3, edim_meta = 3,
+                 edim_hidden_1 = 20, edim_hidden_2 = 0,
+                 edim_custom_tf = 3, edim_user = 10):
         
         edim_hidden_output = edim_user - edim_custom_tf
         edim_movie = edim_image + edim_meta
@@ -63,13 +63,13 @@ class HybridCollabFilter():
         #hidden dimension weights
         self.W_hidden_1 = tf.Variable(self.init_var * 
                                       tf.random_normal([self.movie_size, edim_hidden_1]))
-        self.W_hidden_2 = tf.Variable(self.init_var *
-                                      tf.random_normal([edim_hidden_1, edim_hidden_2]))
+        #self.W_hidden_2 = tf.Variable(self.init_var *
+        #                              tf.random_normal([edim_hidden_1, edim_hidden_2]))
         self.W_hidden_output = tf.Variable(
-                self.init_var * tf.random_normal([edim_hidden_2, edim_user - edim_custom_tf]))
+                self.init_var * tf.random_normal([edim_hidden_1, edim_user - edim_custom_tf]))
         
         self.b_hidden_1 = tf.Variable(tf.random_normal([edim_hidden_1]))
-        self.b_hidden_2 = tf.Variable(tf.random_normal([edim_hidden_2]))
+        #self.b_hidden_2 = tf.Variable(tf.random_normal([edim_hidden_2]))
         self.b_hidden_output = tf.Variable(tf.random_normal([edim_user - edim_custom_tf]))
         
         #hidden dimension values
@@ -77,11 +77,11 @@ class HybridCollabFilter():
         self.sig_hidden_1 = tf.sigmoid(self.fullyconnected1)
         self.act_hidden_1 = tf.concat(1, [self.sig_hidden_1])
         
-        self.fullyconnected2 = tf.matmul(self.act_hidden_1, self.W_hidden_2) + self.b_hidden_2
-        self.sig_hidden_2 = tf.sigmoid(self.fullyconnected2)
-        self.act_hidden_2 = tf.concat(1, [self.sig_hidden_2])
+        #self.fullyconnected2 = tf.matmul(self.act_hidden_1, self.W_hidden_2) + self.b_hidden_2
+        #self.sig_hidden_2 = tf.sigmoid(self.fullyconnected2)
+        #self.act_hidden_2 = tf.concat(1, [self.sig_hidden_2])
         
-        self.fullyconnectedoutput = tf.matmul(self.act_hidden_2, self.W_hidden_output) + self.b_hidden_output
+        self.fullyconnectedoutput = tf.matmul(self.act_hidden_1, self.W_hidden_output) + self.b_hidden_output
         self.sig_hidden_output = tf.sigmoid(self.fullyconnectedoutput)
         self.act_hidden_output = tf.concat(1, [self.sig_hidden_output])
         
@@ -101,8 +101,8 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs(self.W_meta) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.b_meta) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.W_hidden_1) ) + \
-                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_2) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.W_hidden_output) )
+                    #tf.reduce_mean(self.l * tf.abs(self.W_hidden_2) ) + \
         self.learning_rate = 0.1
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.cost)
@@ -161,10 +161,11 @@ class HybridCollabFilter():
                 meta_batch = metaFeatures[movie_ids]
 
                 avg_cost +=  (self.session.run([self.cost, self.optimizer],
-                                   {self.users: users_batch, self.imageFeatures: image_batch,
+                                   {self.users: users_batch, 
+                                    self.imageFeatures: image_batch,
                                     self.metaFeatures: meta_batch,
                                     self.movies: movie_batch,
-                                    self.rating: ratings_batch})[0] ) / self.batch_size
+                                    self.rating: ratings_batch})[0] ) / len(movie_batch)
 
 
             print ("Epoch: ", i, " Average Cost: ",avg_cost / self.num_batches)
@@ -221,11 +222,11 @@ class HybridCollabFilter():
         meta_batch = metaFeatures[movie_ids]
 
         mse = self.session.run(self.cost,
-                               {self.users: users_test, 
-                                self.imageFeatures: imageFeatures[movies_test],
-                                self.metaFeatures: metaFeatures[movies_test],
-                                self.movies: movies_test,
-                                self.rating: ratings_test}) / len(users_batch)
+                               {self.users: users_batch, 
+                                self.imageFeatures: image_batch,
+                                self.metaFeatures: meta_batch,
+                                self.movies: movie_batch,
+                                self.rating: ratings_batch}) / len(users_test)
         return mse
 
                     
@@ -333,9 +334,9 @@ if __name__ == '__main__':
     imageFeatures = imageFeatures.as_matrix()
     
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
-    edims_image = [5, 10]
-    tf_custom_dim = [5, 10]
-    meta_dims = [5, 10]
+    edims_image = [3, 5]
+    tf_custom_dim = [3, 5]
+    meta_dims = [3, 5]
     errmat = np.zeros([len(meta_dims), len(tf_custom_dim), len(edims_image)])
     #(self, numUsers, embedding_dim,input_dim):
     for meta_idx, meta_dim in enumerate(meta_dims):
