@@ -6,7 +6,7 @@ import sklearn
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+from scipy.stats import linregress
 
 class HybridCollabFilter():
 
@@ -15,7 +15,7 @@ class HybridCollabFilter():
         # hyper parameters
         self.batch_size = 512 
         self.numUsers = numUsers
-        self.epochs = 4
+        self.epochs = 30
         self.init_var =.01
         self.l = reg_l
 
@@ -44,9 +44,10 @@ class HybridCollabFilter():
         self.yhat = tf.reduce_sum(tf.mul(self.U, movieTensor) , 1) + self.u_b
 
         self.cost = tf.nn.l2_loss(self.yhat - self.rating) + \
-                    tf.reduce_mean(self.l * self.W ) + tf.reduce_mean(self.l * self.b )
+                    tf.reduce_mean(self.l * tf.abs( self.W )) + tf.reduce_mean(self.l *tf.abs( self.b ))
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.002).minimize(self.cost)
+
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -119,16 +120,44 @@ class HybridCollabFilter():
                         auc_mean += sklearn.metrics.auc(yhat, rtg_u, reorder = True) / len(uni_users)
 
                     print ("Testing AUC mean: " , auc_mean)
-                    err = auc_auc
+                    err = auc_mean
 
                 if eval_type == 'MSE':
-                    mse = self.session.run(self.cost,
-                                     {self.users: users_test, self.movieFeatures: featMat[movies_test],
-                                      self.rating: ratings_test}) / len(users_test)
+                    mse,r = self.evaluate(users_test,movies_test,ratings_test,featMat,self.cost)
+                    #r2 =  self.evaluate(users_test,movies_test,ratings_test,featMat,self.r_sqr)
 
                     print ("Testing MSE: ", mse)
+                    print ("Testing R^2: ", r)
+
+
                     err = mse
         return err          
+
+    def evaluate(self,users_test,movies_test,ratings_test,featMat,L):
+
+        num_batches = movies_test.shape[0] // self.batch_size
+
+        avg_mse = 0
+        corr = 0
+
+        for b_idx in range(num_batches):
+            ratings_batch = ratings_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
+            users_batch = users_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
+            movie_ids = movies_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+            movie_batch = featMat[movie_ids]
+
+            mse,yhat= (self.session.run([L ,self.yhat],
+                                          {self.users: users_batch, self.movieFeatures: movie_batch,
+                                           self.rating: ratings_batch}))
+
+            avg_mse += mse/ self.batch_size
+
+            corr += np.corrcoef(yhat,ratings_batch)[0,1]
+
+        return avg_mse / num_batches , corr/ num_batches
+
 
     @staticmethod
     def map2idx(movieratings, mergedScrape_ML):
@@ -167,7 +196,6 @@ def clean_person_string(raw_text):
 
 def featureMatrix(movieData):
     #TfidfVectorizer
-    #plot_vect = CountVectorizer(stop_words='english',max_features=2000,max_df=.9,min_df=.02,ngram_range =(1,2))
     plot_vect = TfidfVectorizer(stop_words='english',max_features=2000,max_df=.9,min_df=.02)
     person_vect = TfidfVectorizer(max_features=400,max_df=.9,min_df=30)
 
@@ -185,8 +213,6 @@ def featureMatrix(movieData):
     personFeatures = person_vect.fit_transform(people_strings).toarray()
 
     movieFeatures = np.concatenate([plotFeatures,personFeatures],axis=1)
-
-    #movieFeatures = plotFeatures
 
     return movieFeatures
 
@@ -219,19 +245,32 @@ if __name__ == '__main__':
     movie_idx = triples[ :,1]
     ratings = triples[:, 2]
 
+    ratings = ratings - ratings.mean()
+
     movie_idx = movie_idx.astype(int)
     #movieFeatures = featMat[movie_idx.astype(int)]
 
     #image features
     imageFeatures = pd.read_csv('imagefeatures.csv', header=None)
     imageFeatures = imageFeatures.as_matrix()
-    print(imageFeatures.shape)
-    
+
+    #print(imageFeatures.shape)
+
+    #allfeatures = featMat
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
+
+    movieModel = HybridCollabFilter(num_users, embedding_dim=20,
+                                    input_dim= allfeatures.shape[1],
+                                    reg_l=.001)
+
+    movieModel.train(user_idx, movie_idx, ratings,
+                     allfeatures, eval_type="MSE")
+
+    '''
     edims = [5, 7]
     reg_l = [1e-4, 1e-2]
     errmat = np.zeros([len(edims), len(reg_l)])
-    #(self, numUsers, embedding_dim,input_dim):
+
     for regidx, reg in enumerate(reg_l):
         for eidx, edim in enumerate(edims):
             movieModel = HybridCollabFilter(num_users, embedding_dim = edim, 
@@ -241,3 +280,4 @@ if __name__ == '__main__':
                                                    allfeatures, eval_type = "MSE")
     print(errmat)
 
+    '''

@@ -53,7 +53,7 @@ class HybridCollabFilter():
 
         self.cost = tf.nn.l2_loss(self.yhat - self.rating)
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.005).minimize(self.cost)
 
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -77,6 +77,8 @@ class HybridCollabFilter():
         ratings_test = ratings[test_idx]
 
         return users_train, movies_train, ratings_train, users_test, movies_test, ratings_test
+
+
 
     def train(self, users, movies, ratings, featMat,wordSeq, eval_type='AUC', val_freq=5):
 
@@ -124,11 +126,36 @@ class HybridCollabFilter():
                     print ("Testing AUC mean: ", auc_mean)
 
                 if eval_type == 'MSE':
-                    mse = self.session.run(self.cost,
-                                           {self.users: users_test, self.movieFeatures: featMat[movies_test],
-                                            self.rating: ratings_test}) / len(users_test)
+                    mse, r = self.evaluate(users_test, movies_test, ratings_test, wordSeq)
+                    # r2 =  self.evaluate(users_test,movies_test,ratings_test,featMat,self.r_sqr)
 
                     print ("Testing MSE: ", mse)
+                    print ("Testing R^2: ", r)
+
+    def evaluate(self,users_test,movies_test,ratings_test,featMat):
+
+        num_batches = movies_test.shape[0] // self.batch_size
+
+        avg_mse = 0
+        corr = 0
+
+        for b_idx in range(num_batches):
+            ratings_batch = ratings_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
+            users_batch = users_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
+            movie_ids = movies_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+            movie_batch = featMat[movie_ids]
+
+            mse,yhat= (self.session.run([self.cost ,self.yhat],
+                                          {self.users: users_batch, self.lstmFeatures: movie_batch,
+                                           self.rating: ratings_batch}))
+
+            avg_mse += mse/ self.batch_size
+
+            corr += np.corrcoef(yhat,ratings_batch)[0,1]
+
+        return avg_mse / num_batches , corr/ num_batches
 
     @staticmethod
     def map2idx(movieratings, mergedScrape_ML):
@@ -210,7 +237,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample(8000000)
+    movieratings = pd.read_csv('ratings.csv').sample(100000)
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -220,10 +247,10 @@ if __name__ == '__main__':
     #featMat = featureMatrix(scrapedMovieData)
     word_seq,embed_mat = lstmFeatures(scrapedMovieData)
 
-    mergedScrape_ML = pd.merge(scrapedMovieData, movieLenseMovies, left_on='movie',
+    mergedScrape_ML = pd.merge(scrapedMovieData, movieLenseMovies, left_on='movie_len_title',
                                right_on='title',
                                how='left')
-    mergedScrape_ML.drop_duplicates(subset='movie', inplace=True)
+    mergedScrape_ML.drop_duplicates(subset='movie_len_title', inplace=True)
 
     # User and movie ids mapped to be on continuous interval
     triples, num_users, num_movie = HybridCollabFilter.map2idx(movieratings, mergedScrape_ML)
@@ -231,6 +258,8 @@ if __name__ == '__main__':
     user_idx = triples[:, 0]
     movie_idx = triples[:, 1]
     ratings = triples[:, 2]
+
+    ratings = ratings - ratings.mean()
 
     movie_idx = movie_idx.astype(int)
 
