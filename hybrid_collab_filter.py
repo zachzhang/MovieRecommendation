@@ -47,7 +47,7 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs( self.W )) + tf.reduce_mean(self.l *tf.abs( self.b ))
 
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=.01).minimize(self.cost)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=.0025).minimize(self.cost)
         
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -223,7 +223,7 @@ if __name__ == '__main__':
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
     scrapedMovieData = scrapedMovieData.fillna('')
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv', nrows = 100000)
+    movieratings = pd.read_csv('ratings.csv')
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -256,8 +256,9 @@ if __name__ == '__main__':
 
     #print(imageFeatures.shape)
 
-    #allfeatures = featMat
-    allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
+    allfeatures = featMat
+    #allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
+
 
     movieModel = HybridCollabFilter(num_users, embedding_dim=20,
                                     input_dim= allfeatures.shape[1],
