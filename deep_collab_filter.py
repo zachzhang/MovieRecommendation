@@ -114,6 +114,8 @@ class HybridCollabFilter():
                                               {self.users: users_batch, self.lstmFeatures: lstm_batch,
                                                self.rating: ratings_batch})[0]) / self.batch_size
 
+
+
             print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
 
             if i % val_freq == 0:
@@ -247,7 +249,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample(10000)
+    movieratings = pd.read_csv('ratings.csv')
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
