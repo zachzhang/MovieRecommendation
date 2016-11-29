@@ -164,7 +164,6 @@ def run_inference_on_image(image):
   image_data = tf.gfile.FastGFile(image, 'rb').read()
 
   # Creates graph from saved GraphDef.
-  create_graph()
 
   with tf.Session() as sess:
     # Some useful tensors:
@@ -175,11 +174,19 @@ def run_inference_on_image(image):
     # 'DecodeJpeg/contents:0': A tensor containing a string providing JPEG
     #   encoding of the image.
     # Runs the softmax tensor by feeding the image_data as input to the graph.
-    softmax_tensor = sess.graph.get_tensor_by_name('softmax:0')
+    '''softmax_tensor = sess.graph.get_tensor_by_name('softmax:0')
     pool_tensor = sess.graph.get_tensor_by_name('pool_3:0')
     image_features = sess.run(pool_tensor,
                            {'DecodeJpeg/contents:0': image_data})
     image_features = np.squeeze(image_features)
+    print(image_features)'''
+    pool_tensor = sess.graph.get_tensor_by_name('pool:0')
+    image_features = sess.run(pool_tensor,
+                           {'DecodeJpeg/contents:0': image_data})
+    image_features = np.squeeze(image_features)
+    image_features = np.sum(image_features,0)
+    image_features = np.sum(image_features,0)
+    
 
     return image_features
 
@@ -205,6 +212,7 @@ def maybe_download_and_extract():
 
 def main(_):
     maybe_download_and_extract()
+    create_graph()
     #image = (FLAGS.image_file if FLAGS.image_file else
     #         os.path.join(FLAGS.model_dir, 'cropped_panda.jpg'))
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
@@ -212,8 +220,7 @@ def main(_):
     titles = scrapedMovieData['movie_len_title']
     print(scrapedMovieData.shape)
     print(titles.shape)
-    sys.exit(0)
-    imagefeatures = np.zeros([scrapedMovieData.shape[1],2048])
+    imagefeatures = np.zeros([scrapedMovieData.shape[0],64])
     for idx, title in enumerate(titles): 
         imagelocation = 'data/moviecovers/' + title
         print('\n\n', imagelocation, '\n')
