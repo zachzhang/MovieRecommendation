@@ -23,7 +23,13 @@ class HybridCollabFilter():
         self.h = 256
         self.h_dense = 512
         self.word_embed = word_embed
-        self.n_dense_feat = 10
+
+        self.n_dense_feat = 5
+        self.n_img_feat = 5
+        self.n_lstm_feat = 10
+
+        embedding_dim = self.n_dense_feat + self.n_lstm_feat + self.n_img_feat
+
         self.l = reg_l
 
         # Movie Features
@@ -48,8 +54,8 @@ class HybridCollabFilter():
         movieTensor = tf.unpack(movieTensor,axis=1)
 
         movieTensor = tflearn.lstm(movieTensor, self.h)
-        movieTensor = tflearn.dropout(movieTensor, 0.8)
-        movieTensor = tflearn.fully_connected(movieTensor, embedding_dim - self.n_dense_feat, activation='linear')
+        movieTensor = tflearn.dropout(movieTensor, 0.5)
+        movieTensor = tflearn.fully_connected(movieTensor, self.n_lstm_feat, activation='linear')
 
         # LInear Model for person fetaures
         self.W = tf.Variable(self.init_var * tf.random_normal([input_dim, self.n_dense_feat]))
@@ -60,8 +66,8 @@ class HybridCollabFilter():
         #Deep Model for Imag Features
 
         imgTensor = tflearn.fully_connected(self.imgFeatures, self.h_dense, activation='relu')
-        imgTensor = tflearn.dropout(imgTensor, 0.8)
-        imgTensor = tflearn.fully_connected(imgTensor, 10, activation='linear')
+        imgTensor = tflearn.dropout(imgTensor, 0.5)
+        imgTensor = tflearn.fully_connected(imgTensor, self.n_img_feat, activation='linear')
 
 
 
@@ -111,7 +117,7 @@ class HybridCollabFilter():
 
 
 
-    def train(self, users, movies, ratings, featMat,wordSeq, eval_type='AUC', val_freq=5):
+    def train(self, users, movies, ratings, featMat,wordSeq,imgMat, eval_type='AUC', val_freq=5):
 
         users_train, movies_train, ratings_train, users_test, movies_test, ratings_test = \
             self.train_test_split(users, movies, ratings)
@@ -128,13 +134,16 @@ class HybridCollabFilter():
                 users_batch = users_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
 
                 movie_ids = movies_train[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
+
                 movie_batch = featMat[movie_ids]
                 lstm_batch = wordSeq[movie_ids]
+                img_batch  = imgMat[movie_ids]
 
                 avg_cost += (self.session.run([self.cost, self.optimizer],
                                               {self.users: users_batch,
                                                self.lstmFeatures: lstm_batch,
                                                self.movieFeatures:movie_batch,
+                                               self.imgFeatures:img_batch,
                                                self.rating: ratings_batch})[0]) / self.batch_size
 
             print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
@@ -159,13 +168,13 @@ class HybridCollabFilter():
                     print ("Testing AUC mean: ", auc_mean)
 
                 if eval_type == 'MSE':
-                    mse, r = self.evaluate(users_test, movies_test, ratings_test, featMat,wordSeq)
+                    mse, r = self.evaluate(users_test, movies_test, ratings_test, featMat,wordSeq,imgMat)
                     # r2 =  self.evaluate(users_test,movies_test,ratings_test,featMat,self.r_sqr)
 
                     print ("Testing MSE: ", mse)
                     print ("Testing R^2: ", r)
 
-    def evaluate(self,users_test,movies_test,ratings_test,featMat,wordSeq):
+    def evaluate(self,users_test,movies_test,ratings_test,featMat,wordSeq,imgMat):
 
         num_batches = movies_test.shape[0] // self.batch_size
 
@@ -180,10 +189,13 @@ class HybridCollabFilter():
             movie_ids = movies_test[self.batch_size * b_idx:self.batch_size * (b_idx + 1)]
             movie_batch = featMat[movie_ids]
             lstm_batch = wordSeq[movie_ids]
+            img_batch = imgMat[movie_ids]
 
             mse,yhat= (self.session.run([self.cost ,self.yhat],
-                                          {self.users: users_batch, self.lstmFeatures: lstm_batch,
+                                          {self.users: users_batch,
+                                           self.lstmFeatures: lstm_batch,
                                            self.movieFeatures: movie_batch,
+                                           self.imgFeatures: img_batch,
                                            self.rating: ratings_batch}))
 
             avg_mse += mse/ self.batch_size
@@ -305,6 +317,6 @@ if __name__ == '__main__':
     movie_idx = movie_idx.astype(int)
 
     # (self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 20, featMat.shape[1],20,50,embed_mat)
-    movieModel.train(user_idx, movie_idx, ratings, featMat,word_seq, eval_type="MSE")
+    movieModel = HybridCollabFilter(num_users, 20, featMat.shape[1],20,50,embed_mat,imageFeatures.shape[1])
+    movieModel.train(user_idx, movie_idx, ratings, featMat,word_seq,imageFeatures, eval_type="MSE")
 

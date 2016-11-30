@@ -288,6 +288,6 @@ if __name__ == '__main__':
     movie_idx = movie_idx.astype(int)
 
     # (self, numUsers, embedding_dim,input_dim):
-    movieModel = HybridCollabFilter(num_users, 20, featMat.shape[1],20,50,embed_mat)
+    movieModel = HybridCollabFilter(num_users, 30, featMat.shape[1],20,50,embed_mat)
     movieModel.train(user_idx, movie_idx, ratings, featMat,word_seq, eval_type="MSE")
 
