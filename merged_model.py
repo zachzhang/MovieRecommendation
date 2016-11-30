@@ -12,21 +12,22 @@ from matplotlib import colors
 from mpl_toolkits.mplot3d import Axes3D
 import six
 from sklearn.decomposition import PCA
+import time
 
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, numMovies, reg_l = 1e-5, 
+    def __init__(self, numUsers, numMovies, reg_l = 1e-3, 
                  inputdim_image = None, inputdim_meta = None, 
                  edim_image = 3, edim_meta = 3,
-                 edim_custom_tf = 3, edim_user = 10):
+                 edim_custom_tf = 3, edim_user = 15):
                 
         edim_hidden_output = edim_user - edim_custom_tf
         edim_movie = edim_image + edim_meta
         edim_hidden_output = edim_user - edim_custom_tf
         
         # hyper parameters
-        self.batch_size = 512
+        self.batch_size = 5120
         self.numUsers = numUsers
         self.numMovies = numMovies
         self.epochs = 20
@@ -129,7 +130,7 @@ class HybridCollabFilter():
         self.num_train = movies_train.shape[0]
         self.num_test = movies_test.shape[0]
         self.num_batches = self.num_train // self.batch_size
-
+        t = time.time()
         for i in range(self.epochs):
             self.adjust_from_quick_to_stable_training()
             avg_cost = 0
@@ -157,7 +158,7 @@ class HybridCollabFilter():
                                     self.rating: ratings_batch})[0] ) / len(movie_batch)
 
 
-            print ("Epoch: ", i, " Average Cost: ",avg_cost / self.num_batches)
+            print ("Epoch: ", i, " Average Cost: ",avg_cost / self.num_batches, ' time = ', time.time() - t)
 
             if i % val_freq ==0 or i == self.epochs - 1:
                 if eval_type == 'AUC':
@@ -293,7 +294,7 @@ if __name__ == '__main__':
     scrapedMovieData = pd.read_csv('movieDataList.csv', index_col=0)
     scrapedMovieData = scrapedMovieData.fillna('')
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv', nrows = 1000000)
+    movieratings = pd.read_csv('ratings.csv', nrows = 10000000)
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -321,18 +322,20 @@ if __name__ == '__main__':
     imageFeatures = imageFeatures.as_matrix()
     
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
-    edims_image = [3, 5]
-    tf_custom_dim = [3, 5]
-    meta_dims = [3, 5]
+    edims_image = [3, 4]
+    tf_custom_dim = [4, 5]
+    meta_dims = [3, 4]
     errmat = np.zeros([len(meta_dims), len(tf_custom_dim), len(edims_image)])
 
     for meta_idx, meta_dim in enumerate(meta_dims):
         for imagedim_idx, imagedim in enumerate(edims_image):
             for tfdim_idx, tfdim in enumerate(tf_custom_dim):
-                movieModel = HybridCollabFilter(num_users, num_movie, edim_image = imagedim, 
+                edim_user = tfdim * 2
+                movieModel = HybridCollabFilter(num_users, num_movie, edim_image = imagedim, edim_meta = meta_dim,
                                                 inputdim_image = imageFeatures.shape[1],
                                                 inputdim_meta = featMat.shape[1],
-                                                edim_custom_tf = tfdim)
+                                                edim_custom_tf = tfdim,
+                                               edim_user = edim_user)
                 errmat[meta_idx, imagedim_idx, tfdim_idx] = \
                         movieModel.train(user_idx,movie_idx, ratings, 
                                          imageFeatures = imageFeatures, 
