@@ -90,9 +90,10 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs(self.b_image) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.W_meta) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.b_meta) ) + \
-                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_output) )
-                    #tf.reduce_mean(self.l * tf.abs(self.W_hidden_1) ) + \
-                    #tf.reduce_mean(self.l * tf.abs(self.W_hidden_2) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_output) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.customTensor) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.U) ) + \
+                    tf.reduce_mean(self.l * tf.abs(self.u_b) )
         self.learning_rate = 0.02
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.cost)
