@@ -3,18 +3,25 @@ import sys
 import numpy as np
 import pandas as pd
 import sklearn
+import matplotlib.pyplot as plt
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.manifold import TSNE
+from matplotlib import colors
+from mpl_toolkits.mplot3d import Axes3D
+import six
+from sklearn.decomposition import PCA
 
 
 class HybridCollabFilter():
 
-    def __init__(self, numUsers, numMovies, reg_l = 1e-2, 
+    def __init__(self, numUsers, numMovies, reg_l = 1e-5, 
                  inputdim_image = None, inputdim_meta = None, 
                  edim_image = 3, edim_meta = 3,
-                 edim_hidden_1 = 30, edim_hidden_2 = 0,
                  edim_custom_tf = 3, edim_user = 10):
+        
+                 #edim_hidden_1 = 30, edim_hidden_2 = 0,
         
         edim_hidden_output = edim_user - edim_custom_tf
         edim_movie = edim_image + edim_meta
@@ -24,7 +31,7 @@ class HybridCollabFilter():
         self.batch_size = 512
         self.numUsers = numUsers
         self.numMovies = numMovies
-        self.epochs = 11
+        self.epochs = 20
         self.init_var =.01
         self.l = reg_l
 
@@ -61,27 +68,27 @@ class HybridCollabFilter():
         
         self.movie_size = edim_image + edim_meta
         #hidden dimension weights
-        self.W_hidden_1 = tf.Variable(self.init_var * 
-                                      tf.random_normal([self.movie_size, edim_hidden_1]))
+        #self.W_hidden_1 = tf.Variable(self.init_var * 
+        #                              tf.random_normal([self.movie_size, edim_hidden_1]))
         #self.W_hidden_2 = tf.Variable(self.init_var *
         #                              tf.random_normal([edim_hidden_1, edim_hidden_2]))
         self.W_hidden_output = tf.Variable(
-                self.init_var * tf.random_normal([edim_hidden_1, edim_user - edim_custom_tf]))
+                self.init_var * tf.random_normal([self.movie_size, edim_user - edim_custom_tf]))
         
-        self.b_hidden_1 = tf.Variable(tf.random_normal([edim_hidden_1]))
+        #self.b_hidden_1 = tf.Variable(tf.random_normal([edim_hidden_1]))
         #self.b_hidden_2 = tf.Variable(tf.random_normal([edim_hidden_2]))
         self.b_hidden_output = tf.Variable(tf.random_normal([edim_user - edim_custom_tf]))
         
         #hidden dimension values
-        self.fullyconnected1 = tf.matmul(self.movieTensor, self.W_hidden_1) + self.b_hidden_1
-        self.sig_hidden_1 = tf.sigmoid(self.fullyconnected1)
-        self.act_hidden_1 = tf.concat(1, [self.sig_hidden_1])
+        #self.fullyconnected1 = tf.matmul(self.movieTensor, self.W_hidden_1) + self.b_hidden_1
+        #self.sig_hidden_1 = tf.sigmoid(self.fullyconnected1)
+        #self.act_hidden_1 = tf.concat(1, [self.sig_hidden_1])
         
         #self.fullyconnected2 = tf.matmul(self.act_hidden_1, self.W_hidden_2) + self.b_hidden_2
         #self.sig_hidden_2 = tf.sigmoid(self.fullyconnected2)
         #self.act_hidden_2 = tf.concat(1, [self.sig_hidden_2])
         
-        self.fullyconnectedoutput = tf.matmul(self.act_hidden_1, self.W_hidden_output) + self.b_hidden_output
+        self.fullyconnectedoutput = tf.matmul(self.movieTensor, self.W_hidden_output) + self.b_hidden_output
         self.sig_hidden_output = tf.sigmoid(self.fullyconnectedoutput)
         self.act_hidden_output = tf.concat(1, [self.sig_hidden_output])
         
@@ -100,10 +107,10 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs(self.b_image) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.W_meta) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.b_meta) ) + \
-                    tf.reduce_mean(self.l * tf.abs(self.W_hidden_1) ) + \
                     tf.reduce_mean(self.l * tf.abs(self.W_hidden_output) )
+                    #tf.reduce_mean(self.l * tf.abs(self.W_hidden_1) ) + \
                     #tf.reduce_mean(self.l * tf.abs(self.W_hidden_2) ) + \
-        self.learning_rate = 0.1
+        self.learning_rate = 0.02
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.cost)
         
@@ -232,8 +239,8 @@ class HybridCollabFilter():
                     
     
     def adjust_from_quick_to_stable_training(self):
-        self.learning_rate = self.learning_rate * .9
-        self.batch_size = int(round(np.min((self.batch_size * 1.5, self.num_train))))
+        self.learning_rate = self.learning_rate * .98
+        self.batch_size = int(round(np.min((self.batch_size * 1.1, self.num_train))))
         self.num_batches = self.num_train // self.batch_size
 
 
@@ -330,9 +337,34 @@ if __name__ == '__main__':
     #movieFeatures = featMat[movie_idx.astype(int)]
 
     #image features
-    imageFeatures = pd.read_csv('imagefeatures.csv', header=None)
+    """
+    imageFeatures = pd.read_csv('imagefeatures2048.csv', header=None)
     imageFeatures = imageFeatures.as_matrix()
     
+    print(imageFeatures.shape)
+    model = PCA(n_components=50)
+    
+    imageFeatures = model.fit_transform(imageFeatures)
+    np.savetxt("imagefeaturespca50.csv", imageFeatures, delimiter=",")
+
+    
+    print(model.explained_variance_ratio_) 
+    total = 0
+    for idx, val in enumerate(model.explained_variance_ratio_):
+        total += val
+        print(idx, total)
+    """
+    imageFeatures = pd.read_csv('imagefeaturespca50.csv', header=None)
+    imageFeatures = imageFeatures.as_matrix()
+    """
+    print(imageFeatures.shape)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(xs=imageFeatures[:, 0], ys=imageFeatures[:, 1],
+               zs=imageFeatures[:, 2])
+    plt.show()
+    sys.exit(0)
+    """
     allfeatures = np.concatenate((imageFeatures, featMat), axis=1)
     edims_image = [3, 5]
     tf_custom_dim = [3, 5]
