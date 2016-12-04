@@ -10,6 +10,7 @@ import tflearn
 import argparse
 from preprocessors import WordSequencePreProcessor
 from tflearn.layers.embedding_ops import embedding
+import pickle
 
 class HybridCollabFilter():
     def __init__(self, numUsers, embedding_dim, input_dim,seq_len,word_embed,embed_mat, img_feats,reg_l = .001):
@@ -21,12 +22,12 @@ class HybridCollabFilter():
         self.init_var = .01
         self.l = .001
         self.h = 256
-        self.h_dense = 512
+        self.h_dense = 128
         self.word_embed = word_embed
 
-        self.n_dense_feat = 5
-        self.n_img_feat = 5
-        self.n_lstm_feat = 10
+        self.n_dense_feat = 10
+        self.n_img_feat = 10
+        self.n_lstm_feat = 20
 
         embedding_dim = self.n_dense_feat + self.n_lstm_feat + self.n_img_feat
 
@@ -54,7 +55,7 @@ class HybridCollabFilter():
         movieTensor = tf.unpack(movieTensor,axis=1)
 
         movieTensor = tflearn.lstm(movieTensor, self.h)
-        movieTensor = tflearn.dropout(movieTensor, 0.5)
+        movieTensor = tflearn.dropout(movieTensor, 0.8)
         movieTensor = tflearn.fully_connected(movieTensor, self.n_lstm_feat, activation='linear')
 
         # LInear Model for person fetaures
@@ -66,7 +67,7 @@ class HybridCollabFilter():
         #Deep Model for Imag Features
 
         imgTensor = tflearn.fully_connected(self.imgFeatures, self.h_dense, activation='relu')
-        imgTensor = tflearn.dropout(imgTensor, 0.5)
+        imgTensor = tflearn.dropout(imgTensor, 0.8)
         imgTensor = tflearn.fully_connected(imgTensor, self.n_img_feat, activation='linear')
 
 
@@ -84,13 +85,15 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs( self.W )) + tf.reduce_mean(self.l *tf.abs( self.b ))
 
 
-        self.optimizer = tf.train.AdamOptimizer(0.005)
+        self.saver = tf.train.Saver()
 
-        tvars = tf.trainable_variables()
+        self.optimizer = tf.train.AdamOptimizer(0.001).minimize(self.cost)
+        #tvars = tf.trainable_variables()
 
-        grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), 1)
+        #grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), 1)
 
-        self.optimizer = self.optimizer.apply_gradients(zip(grads, tvars))
+        #self.optimizer = self.optimizer.apply_gradients(zip(grads, tvars))
+
 
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -100,6 +103,10 @@ class HybridCollabFilter():
         shuffle = np.random.permutation(len(users))
 
         partition = np.floor(len(users) * (1 - split))
+
+        pickle.dump(shuffle[:partition],open("train_idx.p","wb"))
+
+        pickle.dump(shuffle[partition:],open("test_idx.p","wb")) 
 
         train_idx = shuffle[:partition]
         test_idx = shuffle[partition:]
@@ -146,9 +153,12 @@ class HybridCollabFilter():
                                                self.imgFeatures:img_batch,
                                                self.rating: ratings_batch})[0]) / self.batch_size
 
+
             print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
 
-            if i % val_freq == 0:
+            save_path = self.saver.save(self.session, "model.ckpt")
+
+            if True:
                 if eval_type == 'AUC':
                     auc_mean = 0
                     uni_users = np.unique(users_test)
@@ -259,6 +269,8 @@ def featureMatrix(movieData):
     #plot_vect = TfidfVectorizer(stop_words='english', max_features=2000, max_df=.9, min_df=.02)
     person_vect = CountVectorizer(max_features=400, max_df=.9, min_df=10)
 
+    pickle.dump(person_vect,open("person_vect.p","wb"))
+
     #plotFeatures = plot_vect.fit_transform(movieData['plot']).toarray()
 
     cast_str = movieData['cast'].apply(clean_person_string)
@@ -266,13 +278,14 @@ def featureMatrix(movieData):
     editor_str = movieData['editor'].apply(clean_person_string)
     writer_str = movieData['writer'].apply(clean_person_string)
 
-    people_df = pd.DataFrame([cast_str, director_str, editor_str, writer_str])
-
+#    people_df = pd.DataFrame([cast_str, director_str, editor_str, writer_str])
+    people_df = pd.DataFrame([cast_str, director_str])
     people_strings = people_df.apply(lambda x: ' '.join(x), axis=0)
 
     personFeatures = person_vect.fit_transform(people_strings).toarray()
 
     #movieFeatures = np.concatenate([plotFeatures, personFeatures], axis=1)
+    print(personFeatures.shape)
 
     return personFeatures
 
@@ -284,7 +297,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample(10000)
+    movieratings = pd.read_csv('ratings.csv')
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
@@ -302,7 +315,7 @@ if __name__ == '__main__':
 
 
     #Load Image Features
-    imageFeatures = pd.read_csv('imagefeatures.csv', header=None)
+    imageFeatures = pd.read_csv('imagefeatures200.csv', header=None)
     imageFeatures = imageFeatures.as_matrix()
 
     # User and movie ids mapped to be on continuous interval

@@ -85,6 +85,8 @@ class BowPreProcessor(PreProcessor):
             print('Finalizing Vectorizer')
             vectorizer2 = CountVectorizer(analyzer="word", stop_words='english', max_features=None, vocabulary=new_voc)
 
+            pickle.dump(vectorizer2,open("lstm_vect.p","wb"))
+
             self.vectorizer = vectorizer2
 
         else:

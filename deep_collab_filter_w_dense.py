@@ -66,13 +66,14 @@ class HybridCollabFilter():
                     tf.reduce_mean(self.l * tf.abs( self.W )) + tf.reduce_mean(self.l *tf.abs( self.b ))
 
 
-        self.optimizer = tf.train.AdamOptimizer(0.005)
+        self.optimizer = tf.train.AdamOptimizer(0.001).minimize(self.cost)
 
-        tvars = tf.trainable_variables()
+        #tvars = tf.trainable_variables()
 
-        grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), 1)
 
-        self.optimizer = self.optimizer.apply_gradients(zip(grads, tvars))
+        #grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), 1)
+
+        #self.optimizer = self.optimizer.apply_gradients(zip(grads, tvars))
 
         self.session = tf.Session()
         self.session.run(tf.initialize_all_variables())
@@ -124,6 +125,7 @@ class HybridCollabFilter():
                                                self.lstmFeatures: lstm_batch,
                                                self.movieFeatures:movie_batch,
                                                self.rating: ratings_batch})[0]) / self.batch_size
+
 
             print ("Epoch: ", i, " Average Cost: ", avg_cost / num_batches)
 
@@ -242,7 +244,9 @@ def featureMatrix(movieData):
     editor_str = movieData['editor'].apply(clean_person_string)
     writer_str = movieData['writer'].apply(clean_person_string)
 
-    people_df = pd.DataFrame([cast_str, director_str, editor_str, writer_str])
+#    people_df = pd.DataFrame([cast_str, director_str, editor_str, writer_str])
+
+    people_df = pd.DataFrame([cast_str, director_str])
 
     people_strings = people_df.apply(lambda x: ' '.join(x), axis=0)
 
@@ -260,7 +264,7 @@ if __name__ == '__main__':
     scrapedMovieData = scrapedMovieData.fillna('')
 
     # Movie Lens rating data
-    movieratings = pd.read_csv('ratings.csv').sample(10000)
+    movieratings = pd.read_csv('ratings.csv')
 
     # List of movies in order
     movieLenseMovies = pd.read_csv('movies.csv')
