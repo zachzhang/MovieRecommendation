@@ -1,7 +1,10 @@
 import pandas as pd
 import sys
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
+
+
 xpad = 0
 movieratings = pd.read_csv('ratings.csv')
 fig = plt.figure(figsize = (18, 18))
@@ -17,15 +20,18 @@ ratings = movieratings['movieId'].value_counts()
 vect = np.array([(x**3)*100 for x in range(9)])
 plt.hist(ratings, bins = vect)
 ax = plt.gca()
+ax.grid(False)
 ax.set_ylim([0, 3000])
 plt.title('Ratings Per Movie', y = .89)
 plt.xlabel('Number of Ratings per Movie (bins growing with the cube of ratings for visualization)', labelpad=xpad)
 plt.ylabel('Occurances (clipped at the top)')
 plt.subplot(313)
 ratings = movieratings['userId'].value_counts()
+print(np.min(ratings))
 vect = np.array([(x**2)*10 for x in range(10)])
 plt.hist(ratings, bins = vect)
 ax = plt.gca()
+ax.grid(False)
 #ax.set_ylim([0, 3000])
 plt.title('Ratings Per user', y = .89)
 plt.xlabel('Number of Ratings per User (bins growing with the square of ratings for visualization)', labelpad=xpad)
